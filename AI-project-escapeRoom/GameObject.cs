@@ -1,3 +1,4 @@
+using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -6,7 +7,7 @@ public class GameObject
     public Vector2 Position { get; set; }
     public Vector2 Velocity { get; set; }
     public Vector2 Size { get; set; }
-    public bool IsGrounded { get; private set; }
+    public bool IsGrounded { get; set; }
 
     public float gravity { private get; set; }
     private float terminalVelocity;
@@ -31,7 +32,7 @@ public class GameObject
         texture.SetData(data);
     }
 
-    public void Update(GameTime gameTime, float groundLevel)
+    public void Update(GameTime gameTime)
     {
         float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
 
@@ -44,21 +45,9 @@ public class GameObject
             if (Velocity.Y > terminalVelocity)
                 Velocity = new Vector2(Velocity.X, terminalVelocity);
         }
-
         // Update position
         Position += Velocity * deltaTime;
 
-        // Check if we've hit the ground
-        if (Position.Y + Size.Y >= groundLevel)
-        {
-            Position = new Vector2(Position.X, groundLevel - Size.Y);
-            Velocity = new Vector2(Velocity.X, 0); // Stop vertical movement
-            IsGrounded = true;
-        }
-        else
-        {
-            IsGrounded = false;
-        }
     }
 
     public void Draw(SpriteBatch spriteBatch)
@@ -88,4 +77,39 @@ public class GameObject
         return thisRect.Intersects(otherRect);
     }
 
+
+    public void StopByWall(Wall wall)
+    {
+        if (Intersects(wall))
+        {
+            // Calculate the overlap distances in both X and Y directions
+            float overlapX = Math.Min(Position.X + Size.X - wall.Position.X, wall.Position.X + wall.Size.X - Position.X);
+            float overlapY = Math.Min(Position.Y + Size.Y - wall.Position.Y, wall.Position.Y + wall.Size.Y - Position.Y);
+
+            // Resolve collision on the axis with the smallest overlap
+            if (overlapX < overlapY)
+            {
+                // Resolve X-axis collision
+                if (wall.Position.X < Position.X)
+                    Position = new Vector2(wall.Position.X + wall.Size.X, Position.Y);
+                else
+                    Position = new Vector2(wall.Position.X - Size.X, Position.Y);
+
+                // Stop horizontal movement
+                Velocity = new Vector2(0, Velocity.Y);
+            }
+            else
+            {
+                // Resolve Y-axis collision
+                if (wall.Position.Y < Position.Y)
+                    Position = new Vector2(Position.X, wall.Position.Y + wall.Size.Y);
+                else
+                    Position = new Vector2(Position.X, wall.Position.Y - Size.Y);
+
+                // Stop vertical movement and mark as grounded if appropriate
+                IsGrounded = Velocity.Y > 0;
+                Velocity = new Vector2(Velocity.X, 0);
+            }
+        }
+    }
 }

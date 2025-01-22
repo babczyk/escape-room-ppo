@@ -1,3 +1,4 @@
+using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -26,9 +27,10 @@ public class Player : GameObject
         }
     }
 
-    public new void Update(GameTime gameTime, float groundLevel)
+
+    public new void Update(GameTime gameTime)
     {
-        base.Update(gameTime, groundLevel);
+        base.Update(gameTime);
 
         // Update held box position to follow the player
         if (heldBox != null)

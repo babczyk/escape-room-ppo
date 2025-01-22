@@ -18,5 +18,13 @@ public class Box : GameObject
         IsPickedUp = false;
         Position = newPosition;
         gravity = 9.8f;
+        IsGrounded = false;
+    }
+    public new void Update(GameTime gameTime)
+    {
+        if (!IsPickedUp)
+        {
+            base.Update(gameTime);
+        }
     }
 }

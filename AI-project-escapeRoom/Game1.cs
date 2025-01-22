@@ -2,6 +2,7 @@
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 
+
 namespace AI_project_escapeRoom;
 
 public class Game1 : Game
@@ -10,7 +11,10 @@ public class Game1 : Game
     private SpriteBatch _spriteBatch;
 
     private Player player; //game object
+
+    //room environment//
     private Box box; //game object
+    private Wall wall; //game object
     private float groundLevel;
 
     public Game1()
@@ -40,6 +44,13 @@ public class Game1 : Game
 
         box = new Box(boxStartPosition, boxSize);
         box.LoadTexture(GraphicsDevice, Color.Blue); // Give it a blue color
+
+        Vector2 wallsize = new Vector2(10000, 50); // Width and height
+        Vector2 wallposition = new Vector2(0, groundLevel); // Start position
+
+        wall = new Wall(wallposition, wallsize);
+        wall.LoadTexture(GraphicsDevice, Color.White); // Give it a white color
+
     }
 
     protected override void LoadContent()
@@ -49,6 +60,7 @@ public class Game1 : Game
 
     protected override void Update(GameTime gameTime)
     {
+
         if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || Keyboard.GetState().IsKeyDown(Keys.Escape))
             Exit();
         ///
@@ -67,6 +79,7 @@ public class Game1 : Game
         if (state.IsKeyDown(Keys.Space) && player.IsGrounded)
         {
             player.ApplyForce(new Vector2(0, -350)); // Jump
+            player.IsGrounded = false;
         }
         if (state.IsKeyDown(Keys.E))
         {
@@ -77,9 +90,12 @@ public class Game1 : Game
             player.DropHeldBox();
         }
 
-        // Update the player
-        player.Update(gameTime, groundLevel);
-        box.Update(gameTime, groundLevel);
+        player.StopByWall(wall);
+        box.StopByWall(wall);
+        // Update sections
+        player.Update(gameTime);
+        box.Update(gameTime);
+        wall.Update(gameTime);
 
         base.Update(gameTime);
     }
@@ -92,6 +108,7 @@ public class Game1 : Game
         _spriteBatch.Begin();
         player.Draw(_spriteBatch);
         box.Draw(_spriteBatch);
+        wall.Draw(_spriteBatch);
         _spriteBatch.End();
 
         base.Draw(gameTime);
