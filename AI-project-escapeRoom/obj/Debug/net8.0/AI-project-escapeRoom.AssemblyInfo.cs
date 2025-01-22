@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AI-project-escapeRoom")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e389a8359208b130b8a570fcdb4360213579c40e")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+999a3d1bdfc561562f2fd5239c9297262bf18589")]
 [assembly: System.Reflection.AssemblyProductAttribute("AI-project-escapeRoom")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AI-project-escapeRoom")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
