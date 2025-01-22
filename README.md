@@ -1,2 +1,2 @@
-# PG_MAIN
+# PG
 Escape room solving ai for 13th grade 
