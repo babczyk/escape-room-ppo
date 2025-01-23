@@ -35,7 +35,7 @@ public class Player : GameObject
         // Update held box position to follow the player
         if (heldBox != null)
         {
-            heldBox.Position = new Vector2(Position.X + Size.X / 2 - heldBox.Size.X / 2, Position.Y - heldBox.Size.Y);
+            heldBox.Position = new Vector2(Position.X + Size.X / 2 - heldBox.Size.X / 2 + 35, Position.Y - heldBox.Size.Y - 10);
         }
     }
 }

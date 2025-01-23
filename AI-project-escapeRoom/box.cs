@@ -1,7 +1,7 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
-public class Box : GameObject
+public class Box : Wall
 {
     public bool IsPickedUp { get; private set; }
 

@@ -14,7 +14,8 @@ public class Game1 : Game
 
     //room environment//
     private Box box; //game object
-    private Wall wall; //game object
+    private Wall ground; //game object
+    private Wall platform; //game object
     private float groundLevel;
 
     public Game1()
@@ -45,11 +46,17 @@ public class Game1 : Game
         box = new Box(boxStartPosition, boxSize);
         box.LoadTexture(GraphicsDevice, Color.Blue); // Give it a blue color
 
-        Vector2 wallsize = new Vector2(10000, 50); // Width and height
-        Vector2 wallposition = new Vector2(0, groundLevel); // Start position
+        Vector2 groundsize = new Vector2(10000, 50); // Width and height
+        Vector2 groundposition = new Vector2(0, groundLevel); // Start position
 
-        wall = new Wall(wallposition, wallsize);
-        wall.LoadTexture(GraphicsDevice, Color.White); // Give it a white color
+        ground = new Wall(groundposition, groundsize);
+        ground.LoadTexture(GraphicsDevice, Color.White); // Give it a white color
+
+        Vector2 platformsize = new Vector2(500, 25); // Width and height
+        Vector2 platformposition = new Vector2(500, groundLevel - 100); // Start position
+
+        platform = new Wall(platformposition, platformsize);
+        platform.LoadTexture(GraphicsDevice, Color.White); // Give it a white color
 
     }
 
@@ -90,12 +97,16 @@ public class Game1 : Game
             player.DropHeldBox();
         }
 
-        player.StopByWall(wall);
-        box.StopByWall(wall);
+        player.StopByWall(ground);
+        player.StopByWall(platform);
+        player.StopByWall(box);
+        box.StopByWall(ground);
+        box.StopByWall(platform);
+
         // Update sections
         player.Update(gameTime);
         box.Update(gameTime);
-        wall.Update(gameTime);
+        ground.Update(gameTime);
 
         base.Update(gameTime);
     }
@@ -108,7 +119,8 @@ public class Game1 : Game
         _spriteBatch.Begin();
         player.Draw(_spriteBatch);
         box.Draw(_spriteBatch);
-        wall.Draw(_spriteBatch);
+        ground.Draw(_spriteBatch);
+        platform.Draw(_spriteBatch);
         _spriteBatch.End();
 
         base.Draw(gameTime);
