@@ -8,19 +8,21 @@ public class GameObject
     public Vector2 Velocity { get; set; }
     public Vector2 Size { get; set; }
     public bool IsGrounded { get; set; }
+    public String ROLL = "ROLL";
 
     public float gravity { private get; set; }
     private float terminalVelocity;
     private bool wascolliding;
     private Texture2D texture;
 
-    public GameObject(Vector2 position, Vector2 size, float gravity = 9.8f, float terminalVelocity = 100000f)
+    public GameObject(Vector2 position, Vector2 size, String roll = "ROLL", float gravity = 9.8f, float terminalVelocity = 100000f)
     {
         Position = position;
         Velocity = Vector2.Zero;
         Size = size;
         this.gravity = gravity;
         this.terminalVelocity = terminalVelocity;
+        this.ROLL = roll;
     }
 
     public void LoadTexture(GraphicsDevice graphicsDevice, Color color)
@@ -82,9 +84,10 @@ public class GameObject
 
         // Check for intersection manually
         bool intersects = thisRect.Left <= otherRect.Right &&
-                  thisRect.Right >= otherRect.Left &&
-                  thisRect.Top <= otherRect.Bottom &&
-                  thisRect.Bottom >= otherRect.Top;
+              thisRect.Right >= otherRect.Left &&
+              thisRect.Top <= otherRect.Bottom &&
+              thisRect.Bottom >= otherRect.Top;
+        //System.Console.WriteLine(thisRect.Bottom + " " + otherRect.Top + " " + intersects + " " + ROLL);
 
         if (intersects)
         {
@@ -97,14 +100,8 @@ public class GameObject
 
     public bool ExitIntersect(GameObject other)
     {
-        // Create a rectangle for this object
-        Rectangle thisRect = new Rectangle((int)Position.X, (int)Position.Y, (int)Size.X, (int)Size.Y);
-
-        // Create a rectangle for the other object
-        Rectangle otherRect = new Rectangle((int)other.Position.X, (int)other.Position.Y, (int)other.Size.X, (int)other.Size.Y);
-
         // Check if the rectangles intersect
-        if (wascolliding && !thisRect.Intersects(otherRect))
+        if (wascolliding && !Intersects(other))
         {
             wascolliding = false;
             return true;
@@ -114,47 +111,67 @@ public class GameObject
     }
 
 
-    public void StopByWall(Wall wall)
+    public void StopByWalls(Wall[] walls)
     {
+        Wall closestWall = null;
+        float smallestOverlap = float.MaxValue;
 
-        if (Intersects(wall))
+        foreach (var wall in walls)
         {
-            // Calculate the overlap distances in both X and Y directions
-            float overlapX = Math.Min(Position.X + Size.X - wall.Position.X, wall.Position.X + wall.Size.X - Position.X);
-            float overlapY = Math.Min(Position.Y + Size.Y - wall.Position.Y, wall.Position.Y + wall.Size.Y - Position.Y);
+            if (Intersects(wall))
+            {
+                // Calculate the overlap distances
+                float overlapX = Math.Min(Position.X + Size.X - wall.Position.X, wall.Position.X + wall.Size.X - Position.X);
+                float overlapY = Math.Min(Position.Y + Size.Y - wall.Position.Y, wall.Position.Y + wall.Size.Y - Position.Y);
 
-            // Resolve collision on the axis with the smallest overlap
+                // Determine the smallest overlap
+                float overlap = Math.Min(overlapX, overlapY);
+
+                if (overlap < smallestOverlap)
+                {
+                    smallestOverlap = overlap;
+                    closestWall = wall;
+                }
+            }
+        }
+
+        // Resolve collision with the closest wall, if any
+        if (closestWall != null)
+        {
+            System.Console.WriteLine(closestWall.ROLL + " " + ROLL + " " + IsGrounded);
+            float overlapX = Math.Min(Position.X + Size.X - closestWall.Position.X, closestWall.Position.X + closestWall.Size.X - Position.X);
+            float overlapY = Math.Min(Position.Y + Size.Y - closestWall.Position.Y, closestWall.Position.Y + closestWall.Size.Y - Position.Y);
+
             if (overlapX < overlapY)
             {
                 // Resolve X-axis collision
-                if (wall.Position.X < Position.X)
-                    Position = new Vector2(wall.Position.X + wall.Size.X, Position.Y);
+                if (closestWall.Position.X < Position.X)
+                    Position = new Vector2(closestWall.Position.X + closestWall.Size.X, Position.Y);
                 else
-                    Position = new Vector2(wall.Position.X - Size.X, Position.Y);
+                    Position = new Vector2(closestWall.Position.X - Size.X, Position.Y);
 
                 // Stop horizontal movement
                 Velocity = new Vector2(0, Velocity.Y);
             }
             else
             {
-                System.Console.WriteLine(Velocity + " " + Position + " " + IsGrounded);
                 // Resolve Y-axis collision
-                if (wall.Position.Y < Position.Y)
-                    Position = new Vector2(Position.X, wall.Position.Y + wall.Size.Y);
+                if (closestWall.Position.Y < Position.Y)
+                    Position = new Vector2(Position.X, closestWall.Position.Y + closestWall.Size.Y);
                 else
                 {
                     if (Velocity.Y > 0)
                         Velocity = new Vector2(Velocity.X, 0);
-                    Position = new Vector2(Position.X, wall.Position.Y - Size.Y);
 
-                    IsGrounded = true; // Stop vertical movement and mark as grounded if appropriate
+                    Position = new Vector2(Position.X, closestWall.Position.Y - Size.Y);
+                    IsGrounded = true;
                 }
-
-
             }
-            System.Console.WriteLine("yes in bound");
         }
         else
-            System.Console.WriteLine("exit in bound");
+        {
+            IsGrounded = false; // No collision detected
+        }
     }
+
 }

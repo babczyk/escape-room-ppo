@@ -1,3 +1,5 @@
+using System;
+using System.Data;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -5,7 +7,7 @@ public class Box : Wall
 {
     public bool IsPickedUp { get; private set; }
 
-    public Box(Vector2 position, Vector2 size) : base(position, size) { }
+    public Box(Vector2 position, Vector2 size, String roll = "BOX") : base(position, size, roll) { }
 
     public void PickUp()
     {

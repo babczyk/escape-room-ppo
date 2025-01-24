@@ -16,6 +16,7 @@ public class Game1 : Game
     private Box box; //game object
     private Wall ground; //game object
     private Wall platform; //game object
+    private Wall[] walls; //game objects
     private float groundLevel;
 
     public Game1()
@@ -36,7 +37,7 @@ public class Game1 : Game
         Vector2 playerSize = new Vector2(50, 50); // Width and height
         Vector2 playerStartPosition = new Vector2(100, groundLevel - playerSize.Y); // Start position
 
-        player = new Player(playerStartPosition, playerSize);
+        player = new Player(playerStartPosition, playerSize, "PLAYER");
         player.LoadTexture(GraphicsDevice, Color.Red); // Give it a red color
 
 
@@ -57,6 +58,8 @@ public class Game1 : Game
 
         platform = new Wall(platformposition, platformsize);
         platform.LoadTexture(GraphicsDevice, Color.White); // Give it a white color
+
+        walls = new Wall[] { ground, platform };
 
     }
 
@@ -85,7 +88,7 @@ public class Game1 : Game
         }
         if (state.IsKeyDown(Keys.Space) && player.IsGrounded)
         {
-            player.ApplyForce(new Vector2(0, -350)); // Jump
+            player.ApplyForce(new Vector2(0, -250)); // Jump
             player.IsGrounded = false;
         }
         if (state.IsKeyDown(Keys.E))
@@ -97,11 +100,9 @@ public class Game1 : Game
             player.DropHeldBox();
         }
 
-        player.StopByWall(ground);
-        player.StopByWall(platform);
-        player.StopByWall(box);
-        box.StopByWall(ground);
-        box.StopByWall(platform);
+        // Resolve collisions for player and box
+        player.StopByWalls(walls);
+        box.StopByWalls(walls);
 
         // Update sections
         player.Update(gameTime);
