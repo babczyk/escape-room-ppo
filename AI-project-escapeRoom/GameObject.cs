@@ -98,18 +98,6 @@ public class GameObject
         return intersects;
     }
 
-    public bool ExitIntersect(GameObject other)
-    {
-        // Check if the rectangles intersect
-        if (wascolliding && !Intersects(other))
-        {
-            wascolliding = false;
-            return true;
-        }
-
-        return false;
-    }
-
 
     public void StopByWalls(Wall[] walls)
     {
@@ -138,10 +126,23 @@ public class GameObject
         // Resolve collision with the closest wall, if any
         if (closestWall != null)
         {
-            System.Console.WriteLine(closestWall.ROLL + " " + ROLL + " " + IsGrounded);
+            //System.Console.WriteLine(closestWall.ROLL + " " + ROLL + " " + IsGrounded);
             float overlapX = Math.Min(Position.X + Size.X - closestWall.Position.X, closestWall.Position.X + closestWall.Size.X - Position.X);
             float overlapY = Math.Min(Position.Y + Size.Y - closestWall.Position.Y, closestWall.Position.Y + closestWall.Size.Y - Position.Y);
+            if (ROLL == "PLAYER" && closestWall.ROLL == "BUTTON")
+            {
+                Button button = (Button)closestWall;
+                button.Press();
+            }
+            else if (ROLL == "PLAYER" && closestWall.ROLL != "BUTTON")
+            {
+                Button button = (Button)closestWall;
+                button.Release();
 
+            }
+            {
+                IsGrounded = true;
+            }
             if (overlapX < overlapY)
             {
                 // Resolve X-axis collision
@@ -157,7 +158,9 @@ public class GameObject
             {
                 // Resolve Y-axis collision
                 if (closestWall.Position.Y < Position.Y)
+                {
                     Position = new Vector2(Position.X, closestWall.Position.Y + closestWall.Size.Y);
+                }
                 else
                 {
                     if (Velocity.Y > 0)
