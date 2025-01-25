@@ -1,0 +1,23 @@
+# Ignore build directories
+bin/
+obj/
+Debug/
+Release/
+
+# Ignore temporary files
+*.tmp
+*.log
+*.user
+*.lock
+
+# Ignore specific build-related files
+*.dll
+*.exe
+*.pdb
+
+# Ignore IDE-specific files (for Visual Studio)
+.vscode/
+*.csproj.user
+*.suo
+*.userosscache
+*.userprefs
