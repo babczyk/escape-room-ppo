@@ -129,20 +129,7 @@ public class GameObject
             //System.Console.WriteLine(closestWall.ROLL + " " + ROLL + " " + IsGrounded);
             float overlapX = Math.Min(Position.X + Size.X - closestWall.Position.X, closestWall.Position.X + closestWall.Size.X - Position.X);
             float overlapY = Math.Min(Position.Y + Size.Y - closestWall.Position.Y, closestWall.Position.Y + closestWall.Size.Y - Position.Y);
-            if (ROLL == "PLAYER" && closestWall.ROLL == "BUTTON")
-            {
-                Button button = (Button)closestWall;
-                button.Press();
-            }
-            else if (ROLL == "PLAYER" && closestWall.ROLL != "BUTTON")
-            {
-                Button button = (Button)closestWall;
-                button.Release();
 
-            }
-            {
-                IsGrounded = true;
-            }
             if (overlapX < overlapY)
             {
                 // Resolve X-axis collision
