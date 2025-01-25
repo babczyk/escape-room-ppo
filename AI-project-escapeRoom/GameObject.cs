@@ -8,7 +8,7 @@ public class GameObject
     public Vector2 Velocity { get; set; }
     public Vector2 Size { get; set; }
     public bool IsGrounded { get; set; }
-    public String ROLL = "ROLL";
+    public String ROLL { get; set; }
 
     public float gravity { private get; set; }
     private float terminalVelocity;

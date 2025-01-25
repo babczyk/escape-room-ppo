@@ -1,4 +1,5 @@
-﻿using Microsoft.Xna.Framework;
+﻿using System.Runtime.Serialization.Formatters;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 
@@ -16,6 +17,7 @@ public class Game1 : Game
     private Box box; //game object
     private Wall ground; //game object
     private Wall platform; //game object
+    private Wall button; //game object
     private Wall[] walls; //game objects
     private float groundLevel;
 
@@ -59,6 +61,13 @@ public class Game1 : Game
         platform = new Wall(platformposition, platformsize);
         platform.LoadTexture(GraphicsDevice, Color.White); // Give it a white color
 
+        Vector2 buttonsize = new Vector2(100, 10); // Width and height
+        Vector2 buttonposition = new Vector2(500, groundLevel - 110); // Start position
+
+        button = new Wall(buttonposition, buttonsize);
+        button.LoadTexture(GraphicsDevice, Color.Red); // Give it a white color
+        button.ROLL = "BUTTON";
+
         walls = new Wall[] { ground, platform };
 
     }
@@ -99,15 +108,25 @@ public class Game1 : Game
         {
             player.DropHeldBox();
         }
+        if (player.Intersects(button) || box.Intersects(button))
+        {
+            button.LoadTexture(GraphicsDevice, Color.Green);
+        }
+        else
+        {
+            button.LoadTexture(GraphicsDevice, Color.Red);
+        }
 
         // Resolve collisions for player and box
         player.StopByWalls(walls);
         box.StopByWalls(walls);
+        button.StopByWalls(walls);
 
         // Update sections
         player.Update(gameTime);
         box.Update(gameTime);
         ground.Update(gameTime);
+        button.Update(gameTime);
 
         base.Update(gameTime);
     }
@@ -122,6 +141,7 @@ public class Game1 : Game
         box.Draw(_spriteBatch);
         ground.Draw(_spriteBatch);
         platform.Draw(_spriteBatch);
+        button.Draw(_spriteBatch);
         _spriteBatch.End();
 
         base.Draw(gameTime);
