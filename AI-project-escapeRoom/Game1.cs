@@ -26,6 +26,11 @@ public class Game1 : Game
     private float groundLevel;
     private float widthLevel;
 
+    // Camera Settings
+    private Vector2 cameraPosition;
+    private const int ScreenWidth = 1280;
+    private const int ScreenHeight = 720;
+
     public Game1()
     {
         _graphics = new GraphicsDeviceManager(this);
@@ -36,6 +41,9 @@ public class Game1 : Game
         _graphics.PreferredBackBufferWidth = 1280;
         _graphics.PreferredBackBufferHeight = 720;
         _graphics.ApplyChanges();
+
+        cameraPosition = Vector2.Zero;
+
     }
 
     protected override void Initialize()
@@ -123,7 +131,7 @@ public class Game1 : Game
 
         HandleInput();
         HandleCollisions();
-
+        HandleCameraMovement();
         // Update game objects
         player.Update(gameTime);
         box.Update(gameTime);
@@ -135,6 +143,28 @@ public class Game1 : Game
         cieling.Update(gameTime);
 
         base.Update(gameTime);
+    }
+
+    private void HandleCameraMovement()
+    {
+        // Check if the player is out of the screen bounds
+        if (player.Position.X < cameraPosition.X) // Move camera left
+        {
+            cameraPosition.X -= ScreenWidth;
+        }
+        else if (player.Position.X > cameraPosition.X + ScreenWidth) // Move camera right
+        {
+            cameraPosition.X += ScreenWidth;
+        }
+
+        if (player.Position.Y < cameraPosition.Y) // Move camera up
+        {
+            cameraPosition.Y -= ScreenHeight;
+        }
+        else if (player.Position.Y > cameraPosition.Y + ScreenHeight) // Move camera down
+        {
+            cameraPosition.Y += ScreenHeight;
+        }
     }
 
     private void HandleInput()
@@ -179,7 +209,8 @@ public class Game1 : Game
     {
         GraphicsDevice.Clear(Color.CornflowerBlue);
 
-        _spriteBatch.Begin();
+        _spriteBatch.Begin(transformMatrix: Matrix.CreateTranslation(-cameraPosition.X, -cameraPosition.Y, 0));
+
 
         // Draw game objects
         player.Draw(_spriteBatch);
