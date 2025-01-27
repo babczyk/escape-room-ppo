@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 
 class PPO
 {
@@ -132,7 +133,7 @@ class PPO
     private double[] Policy(double[] stateVector)
     {
         var hidden = ReLU(LinearLayer(stateVector, policyWeights1));
-        var logits = LinearLayer(hidden, new double[HiddenSize, 4], policyWeights2);
+        var logits = LinearLayer(hidden, new double[HiddenSize, 5], policyWeights2);
         return Softmax(logits);
     }
     /// <summary>
@@ -182,15 +183,41 @@ class PPO
     /// </summary>
     /// <param name="env">The environment to train in</param>
     /// <param name="episodes">Number of episodes to train for</param>
-    public void Train(int episodes, string modelPath, string progressPath)
+    public void Train(GameEnvironment env, int episodes)
     {
         double bestReward = double.MinValue;
         int episode = 0;
-        if (File.Exists(progressPath))
+
+        for (; episode < episodes; episode++)
         {
-            var progress = LoadProgress(progressPath);
-            episode = progress.episode;
-            bestReward = progress.bestReward;
+            List<double[]> stateVectors = new List<double[]>();
+            List<int> actions = new List<int>();
+            List<int> rewards = new List<int>();
+            List<double> oldActionProbs = new List<double>();
+
+            double[] state = env.GetState();
+            bool done = false;
+            int totalReward = 0;
+
+            // Collect trajectory
+            while (!done)
+            {
+                double[] stateVector = state.Select(s => (double)s).ToArray();
+                double[] actionProbs = Policy(stateVector);
+                int action = SampleAction(actionProbs);
+                double actionProb = actionProbs[action];
+
+                stateVectors.Add(stateVector);
+                actions.Add(action);
+                oldActionProbs.Add(actionProb);
+
+                System.Console.WriteLine("Action: " + action);
+                (state, int reward, done) = env.Step(action);
+                rewards.Add(reward);
+                totalReward += reward;
+                Thread.Sleep(10); // Slow down visualization
+
+            }
         }
 
     }

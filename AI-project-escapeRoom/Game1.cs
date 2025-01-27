@@ -1,229 +1,291 @@
-﻿using System.Runtime.Serialization.Formatters;
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using System.Linq;
+using System;
+using System.Threading.Tasks;
+using System.Threading;
 
-namespace AI_project_escapeRoom;
-
-public class Game1 : Game
+namespace AI_project_escapeRoom
 {
-    private GraphicsDeviceManager _graphics;
-    private SpriteBatch _spriteBatch;
-
-    // Game Objects
-    private Player player;
-    private Box box;
-    private Wall ground;
-    private Wall platform;
-    private Wall button;
-    private Wall wall;
-    private Wall door;
-    private Wall cieling;
-    private Wall[] walls;
-
-    // Environment Settings
-    private float groundLevel;
-    private float widthLevel;
-
-    // Camera Settings
-    private Vector2 cameraPosition;
-    private const int ScreenWidth = 1280;
-    private const int ScreenHeight = 720;
-
-    public Game1()
+    public class Game1 : Game
     {
-        _graphics = new GraphicsDeviceManager(this);
-        Content.RootDirectory = "Content";
-        IsMouseVisible = true;
+        private GraphicsDeviceManager _graphics;
+        private SpriteBatch _spriteBatch;
 
-        // Set screen resolution
-        _graphics.PreferredBackBufferWidth = 1280;
-        _graphics.PreferredBackBufferHeight = 720;
-        _graphics.ApplyChanges();
+        // Training components
+        private GameEnvironment gameEnvironment;
+        private PPO ppo;
+        private Task trainingTask;
+        private CancellationTokenSource cancellationSource;
+        private bool isTraining = true;
+        private readonly object gameLock = new object();
 
-        cameraPosition = Vector2.Zero;
+        // Game Objects
+        public Player player;
+        public Box box;
+        public Wall ground;
+        public Wall platform;
+        public Wall button;
+        public Wall wall;
+        public Wall door;
+        public Wall cieling;
+        public bool IsPressed = false;
+        public bool IsOpen = false;
+        public Wall[] walls;
 
-    }
+        // Environment Settings
+        public float groundLevel;
+        public float widthLevel;
 
-    protected override void Initialize()
-    {
-        base.Initialize();
+        // Camera Settings
+        public Vector2 cameraPosition;
+        public int ScreenWidth = 1280;
+        public int ScreenHeight = 720;
 
-        // Set up levels
-        groundLevel = _graphics.PreferredBackBufferHeight - 50;
-        widthLevel = _graphics.PreferredBackBufferWidth - 50;
-
-        // Initialize game objects
-        InitializePlayer();
-        InitializeEnvironment();
-    }
-
-    private void InitializePlayer()
-    {
-        Vector2 playerSize = new Vector2(50, 50);
-        Vector2 playerStartPosition = new Vector2(100, groundLevel - playerSize.Y);
-        player = new Player(playerStartPosition, playerSize, "PLAYER");
-        player.LoadTexture(GraphicsDevice, Color.Red);
-    }
-
-    private void InitializeEnvironment()
-    {
-        // Initialize box
-        Vector2 boxSize = new Vector2(50, 50);
-        Vector2 boxStartPosition = new Vector2(200, groundLevel - boxSize.Y);
-        box = new Box(boxStartPosition, boxSize);
-        box.LoadTexture(GraphicsDevice, Color.Blue);
-
-        // Initialize ground
-        Vector2 groundSize = new Vector2(10000, 50);
-        Vector2 groundPosition = new Vector2(0, groundLevel);
-        ground = new Wall(groundPosition, groundSize);
-        ground.LoadTexture(GraphicsDevice, Color.Black);
-
-        // Initialize platform
-        Vector2 platformSize = new Vector2(500, 25);
-        Vector2 platformPosition = new Vector2(500, groundLevel - 100);
-        platform = new Wall(platformPosition, platformSize);
-        platform.LoadTexture(GraphicsDevice, Color.White);
-
-        // Initialize button
-        Vector2 buttonSize = new Vector2(100, 10);
-        Vector2 buttonPosition = new Vector2(500, groundLevel - 110);
-        button = new Wall(buttonPosition, buttonSize) { ROLL = "BUTTON" };
-        button.LoadTexture(GraphicsDevice, Color.Red);
-
-        // Initialize wall
-        Vector2 wallSize = new Vector2(50, 1000);
-        Vector2 wallPosition = new Vector2(0, 0);
-        wall = new Wall(wallPosition, wallSize);
-        wall.LoadTexture(GraphicsDevice, Color.Black);
-
-        // Initialize door
-        Vector2 doorSize = new Vector2(50, 1000);
-        Vector2 doorPosition = new Vector2(widthLevel, 0);
-        door = new Wall(doorPosition, doorSize);
-        door.LoadTexture(GraphicsDevice, Color.Pink);
-
-        // Initialize cieling
-        Vector2 cielingSize = new Vector2(10000, 50);
-        Vector2 cielingPosition = new Vector2(0, 0);
-        cieling = new Wall(cielingPosition, cielingSize);
-        cieling.LoadTexture(GraphicsDevice, Color.Black);
-
-        // Group walls
-        walls = new Wall[] { ground, platform, wall, door, cieling };
-    }
-
-    protected override void LoadContent()
-    {
-        _spriteBatch = new SpriteBatch(GraphicsDevice);
-    }
-
-    protected override void Update(GameTime gameTime)
-    {
-        // Exit game
-        if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed ||
-            Keyboard.GetState().IsKeyDown(Keys.Escape))
+        public Game1()
         {
-            Exit();
+            _graphics = new GraphicsDeviceManager(this);
+            Content.RootDirectory = "Content";
+            IsMouseVisible = true;
+
+            _graphics.PreferredBackBufferWidth = 1280;
+            _graphics.PreferredBackBufferHeight = 720;
+            _graphics.ApplyChanges();
+
+            cameraPosition = Vector2.Zero;
         }
 
-        HandleInput();
-        HandleCollisions();
-        HandleCameraMovement();
-        // Update game objects
-        player.Update(gameTime);
-        box.Update(gameTime);
-        ground.Update(gameTime);
-        platform.Update(gameTime);
-        button.Update(gameTime);
-        wall.Update(gameTime);
-        door.Update(gameTime);
-        cieling.Update(gameTime);
-
-        base.Update(gameTime);
-    }
-
-    private void HandleCameraMovement()
-    {
-        // Check if the player is out of the screen bounds
-        if (player.Position.X < cameraPosition.X) // Move camera left
+        protected override void Initialize()
         {
-            cameraPosition.X -= ScreenWidth;
-        }
-        else if (player.Position.X > cameraPosition.X + ScreenWidth) // Move camera right
-        {
-            cameraPosition.X += ScreenWidth;
+            base.Initialize();
+
+            groundLevel = _graphics.PreferredBackBufferHeight - 50;
+            widthLevel = _graphics.PreferredBackBufferWidth - 50;
+
+            InitializePlayer();
+            InitializeEnvironment();
+
+            // Initialize training components
+            gameEnvironment = new GameEnvironment(this);
+            ppo = new PPO();
+
+            if (isTraining)
+            {
+                StartTraining();
+            }
         }
 
-        if (player.Position.Y < cameraPosition.Y) // Move camera up
+        private void StartTraining()
         {
-            cameraPosition.Y -= ScreenHeight;
-        }
-        else if (player.Position.Y > cameraPosition.Y + ScreenHeight) // Move camera down
-        {
-            cameraPosition.Y += ScreenHeight;
-        }
-    }
-
-    private void HandleInput()
-    {
-        KeyboardState state = Keyboard.GetState();
-
-        // Player movement
-        if (state.IsKeyDown(Keys.A)) player.Move(new Vector2(-10, 0)); // Move left
-        if (state.IsKeyDown(Keys.D)) player.Move(new Vector2(10, 0));  // Move right
-        if (state.IsKeyDown(Keys.Space) && player.IsGrounded)
-        {
-            player.ApplyForce(new Vector2(0, -250)); // Jump
-            player.IsGrounded = false;
+            cancellationSource = new CancellationTokenSource();
+            trainingTask = Task.Run(() => TrainingLoop(cancellationSource.Token));
         }
 
-        // Box interaction
-        if (state.IsKeyDown(Keys.E)) player.Grab(box);
-        if (state.IsKeyDown(Keys.Q)) player.DropHeldBox();
-
-        // Button interaction
-        if (player.Intersects(button) || box.Intersects(button))
+        private async Task TrainingLoop(CancellationToken token)
         {
-            button.LoadTexture(GraphicsDevice, Color.Green);
+            try
+            {
+                await Task.Run(() =>
+                {
+                    ppo.Train(gameEnvironment, 1000);
+                }, token);
 
-            door.Position = new Vector2(99999, 999999);
+                // Switch to manual mode after training
+                isTraining = false;
+            }
+            catch (OperationCanceledException)
+            {
+                // Training was cancelled
+                isTraining = false;
+            }
         }
-        else
+
+        // Your existing initialization methods remain the same
+        private void InitializePlayer()
         {
+            Vector2 playerSize = new Vector2(50, 50);
+            Vector2 playerStartPosition = new Vector2(100, groundLevel - playerSize.Y);
+            player = new Player(playerStartPosition, playerSize, "PLAYER");
+            player.LoadTexture(GraphicsDevice, Color.Red);
+        }
+        private void InitializeEnvironment()
+        {
+            // Initialize box
+            Vector2 boxSize = new Vector2(50, 50);
+            Vector2 boxStartPosition = new Vector2(200, groundLevel - boxSize.Y);
+            box = new Box(boxStartPosition, boxSize);
+            box.LoadTexture(GraphicsDevice, Color.Blue);
+
+            // Initialize ground
+            Vector2 groundSize = new Vector2(10000, 50);
+            Vector2 groundPosition = new Vector2(0, groundLevel);
+            ground = new Wall(groundPosition, groundSize);
+            ground.LoadTexture(GraphicsDevice, Color.Black);
+
+            // Initialize platform
+            Vector2 platformSize = new Vector2(500, 25);
+            Vector2 platformPosition = new Vector2(500, groundLevel - 100);
+            platform = new Wall(platformPosition, platformSize);
+            platform.LoadTexture(GraphicsDevice, Color.White);
+
+            // Initialize button
+            Vector2 buttonSize = new Vector2(100, 10);
+            Vector2 buttonPosition = new Vector2(500, groundLevel - 110);
+            button = new Wall(buttonPosition, buttonSize) { ROLL = "BUTTON" };
             button.LoadTexture(GraphicsDevice, Color.Red);
-            door.Position = new Vector2(widthLevel, 0);
+
+            // Initialize wall
+            Vector2 wallSize = new Vector2(50, 1000);
+            Vector2 wallPosition = new Vector2(0, 0);
+            wall = new Wall(wallPosition, wallSize);
+            wall.LoadTexture(GraphicsDevice, Color.Black);
+
+            // Initialize door
+            Vector2 doorSize = new Vector2(50, 1000);
+            Vector2 doorPosition = new Vector2(widthLevel, 0);
+            door = new Wall(doorPosition, doorSize);
+            door.LoadTexture(GraphicsDevice, Color.Pink);
+
+            // Initialize cieling
+            Vector2 cielingSize = new Vector2(10000, 50);
+            Vector2 cielingPosition = new Vector2(0, 0);
+            cieling = new Wall(cielingPosition, cielingSize);
+            cieling.LoadTexture(GraphicsDevice, Color.Black);
+
+            // Group walls
+            walls = new Wall[] { ground, platform, wall, door, cieling };
         }
-    }
 
-    private void HandleCollisions()
-    {
-        player.StopByWalls(walls);
-        box.StopByWalls(walls);
-        button.StopByWalls(walls);
-    }
+        protected override void LoadContent()
+        {
+            _spriteBatch = new SpriteBatch(GraphicsDevice);
+        }
 
-    protected override void Draw(GameTime gameTime)
-    {
-        GraphicsDevice.Clear(Color.CornflowerBlue);
+        protected override void Update(GameTime gameTime)
+        {
+            if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed ||
+                Keyboard.GetState().IsKeyDown(Keys.Escape))
+            {
+                Exit();
+            }
 
-        _spriteBatch.Begin(transformMatrix: Matrix.CreateTranslation(-cameraPosition.X, -cameraPosition.Y, 0));
+            lock (gameLock)
+            {
+                if (!isTraining)
+                {
+                    // Only handle manual input when not training
+                    HandleManualInput();
+                }
 
+                HandleCollisions();
+                HandleCameraMovement();
 
-        // Draw game objects
-        player.Draw(_spriteBatch);
-        box.Draw(_spriteBatch);
-        ground.Draw(_spriteBatch);
-        platform.Draw(_spriteBatch);
-        button.Draw(_spriteBatch);
-        wall.Draw(_spriteBatch);
-        door.Draw(_spriteBatch);
-        cieling.Draw(_spriteBatch);
+                // Update game objects
+                player.Update(gameTime);
+                box.Update(gameTime);
+                ground.Update(gameTime);
+                platform.Update(gameTime);
+                button.Update(gameTime);
+                wall.Update(gameTime);
+                door.Update(gameTime);
+                cieling.Update(gameTime);
 
-        _spriteBatch.End();
+                // Button interaction logic
+                UpdateButtonState();
+            }
 
-        base.Draw(gameTime);
+            base.Update(gameTime);
+        }
+
+        private void HandleManualInput()
+        {
+            KeyboardState state = Keyboard.GetState();
+
+            if (state.IsKeyDown(Keys.A)) player.Move(new Vector2(-10, 0));
+            if (state.IsKeyDown(Keys.D)) player.Move(new Vector2(10, 0));
+            if (state.IsKeyDown(Keys.Space) && player.IsGrounded)
+            {
+                player.ApplyForce(new Vector2(0, -250));
+                player.IsGrounded = false;
+            }
+            if (state.IsKeyDown(Keys.E)) player.Grab(box);
+            if (state.IsKeyDown(Keys.Q)) player.DropHeldBox();
+        }
+
+        private void UpdateButtonState()
+        {
+            if (player.Intersects(button) || box.Intersects(button))
+            {
+                button.LoadTexture(GraphicsDevice, Color.Green);
+                IsPressed = true;
+                IsOpen = true;
+                door.Position = new Vector2(99999, 999999);
+            }
+            else
+            {
+                button.LoadTexture(GraphicsDevice, Color.Red);
+                IsPressed = false;
+                IsOpen = false;
+                door.Position = new Vector2(widthLevel, 0);
+            }
+        }
+
+        // Your existing methods remain the same
+        private void HandleCameraMovement()
+        {
+            // Check if the player is out of the screen bounds
+            if (player.Position.X < cameraPosition.X) // Move camera left
+            {
+                cameraPosition.X -= ScreenWidth;
+            }
+            else if (player.Position.X > cameraPosition.X + ScreenWidth) // Move camera right
+            {
+                cameraPosition.X += ScreenWidth;
+            }
+
+            if (player.Position.Y < cameraPosition.Y) // Move camera up
+            {
+                cameraPosition.Y -= ScreenHeight;
+            }
+            else if (player.Position.Y > cameraPosition.Y + ScreenHeight) // Move camera down
+            {
+                cameraPosition.Y += ScreenHeight;
+            }
+        }
+        private void HandleCollisions()
+        {
+            player.StopByWalls(walls);
+            box.StopByWalls(walls);
+            button.StopByWalls(walls);
+        }
+
+        protected override void Draw(GameTime gameTime)
+        {
+            GraphicsDevice.Clear(Color.CornflowerBlue);
+
+            _spriteBatch.Begin(transformMatrix: Matrix.CreateTranslation(-cameraPosition.X, -cameraPosition.Y, 0));
+
+            // Draw game objects
+            player.Draw(_spriteBatch);
+            box.Draw(_spriteBatch);
+            ground.Draw(_spriteBatch);
+            platform.Draw(_spriteBatch);
+            button.Draw(_spriteBatch);
+            wall.Draw(_spriteBatch);
+            door.Draw(_spriteBatch);
+            cieling.Draw(_spriteBatch);
+
+            _spriteBatch.End();
+
+            base.Draw(gameTime);
+        }
+
+        protected override void UnloadContent()
+        {
+            cancellationSource?.Cancel();
+            trainingTask?.Wait();
+            base.UnloadContent();
+        }
     }
 }
