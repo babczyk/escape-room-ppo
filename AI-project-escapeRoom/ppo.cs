@@ -211,7 +211,7 @@ class PPO
                 actions.Add(action);
                 oldActionProbs.Add(actionProb);
 
-                System.Console.WriteLine("Action: " + action);
+                System.Console.WriteLine("Action: " + action + " Action Prob: " + actionProb + " State: " + stateVector[0] + " " + stateVector[1] + " " + stateVector[2] + " " + stateVector[3] + " " + stateVector[4] + " " + stateVector[5] + " reward: " + totalReward);
                 (state, int reward, done) = env.Step(action);
                 rewards.Add(reward);
                 totalReward += reward;
