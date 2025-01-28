@@ -45,21 +45,72 @@ class GameEnvironment
             case 4: game.player.DropHeldBox(); break; // Interact (example)
         }
 
-        // Check for rewards
-        if (game.IsPressed)
-            reward += 10;
-        if (game.IsOpen)
-            reward += 100;
-        if (game.player.Intersects(game.box))
-            reward += 5;
+        // Improved reward system
+        if (game.box.Intersects(game.button))
+        {
+            reward += 100; // Significant reward for placing the box on the button
+            game.IsPressed = true; // Mark button as activated
+        }
 
-        // Check if the game is over
-        if (game.IsOpen || currentStep >= maxSteps)
-            reward += -1; // Penalty for taking too long
+        // Encourage progress toward the goal
+        if (game.IsMovingToward(game.box, game.lastPlayerPosition))
+            reward += 2; // Small reward for moving toward the box
+
+        if (game.IsMovingToward(game.button, game.lastPlayerPosition))
+            reward += 5; // Reward for moving the box closer to the button
+
+        if (game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed)
+            reward += 10; // Reward for heading toward the door after activating the button
+
+        // Extra rewards for reaching key milestones
+        if (game.player.Intersects(game.box))
+            reward += 20; // Reward for successfully reaching and interacting with the box
+
+        if (game.player.Intersects(game.door) && game.IsPressed)
+        {
+            reward += 200; // High reward for completing the goal
+            IsDone = true; // Mark the episode as complete
+        }
+
+        // Punishments to deter bad behavior
+        if (!game.box.Intersects(game.button) && game.player.Intersects(game.door))
+        {
+            reward -= 50; // Penalty for trying to exit without solving the puzzle
+        }
+
+        if (currentStep >= maxSteps)
+        {
+            reward -= 5; // Minor penalty for each step exceeding the time limit
+            game.player.Position = new Vector2(100, game.groundLevel - game.player.Size.Y);// Reset player position
+            currentStep = 0;
+            IsDone = true; // End the episode if the maximum steps are reached
+        }
 
         if (game.player.Position.X < game.cameraPosition.X || game.player.Position.X > game.cameraPosition.X + game.ScreenWidth ||
             game.player.Position.Y < game.cameraPosition.Y || game.player.Position.Y > game.cameraPosition.Y + game.ScreenHeight)
-            IsDone = true; // Penalty for going out of bounds
+        {
+            reward -= 20; // Penalty for going out of bounds
+            game.player.Position = new Vector2(100, game.groundLevel - game.player.Size.Y);// Reset player position
+            IsDone = true; // End the episode for out-of-bounds behavior
+        }
+
+        if (game.box.Position.X < game.cameraPosition.X || game.box.Position.X > game.cameraPosition.X + game.ScreenWidth ||
+            game.box.Position.Y < game.cameraPosition.Y || game.box.Position.Y > game.cameraPosition.Y + game.ScreenHeight)
+        {
+            reward -= 20; // Penalty for going out of bounds
+            game.player.Position = new Vector2(200, game.groundLevel - game.box.Size.Y);// Reset player position
+            IsDone = true; // End the episode for out-of-bounds behavior
+        }
+
+        if (game.IsIdle())
+        {
+            reward -= 1; // Penalty for standing still, encouraging active exploration
+        }
+
+        // Small positive rewards for exploration
+        if (game.IsExploringNewArea())
+            reward += 1; // Encourage exploration to discover mechanics or objects
+
         return (GetState(), reward, IsDone);
     }
 
