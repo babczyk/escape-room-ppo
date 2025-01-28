@@ -98,7 +98,7 @@ class GameEnvironment
             game.box.Position.Y < game.cameraPosition.Y || game.box.Position.Y > game.cameraPosition.Y + game.ScreenHeight)
         {
             reward -= 20; // Penalty for going out of bounds
-            game.player.Position = new Vector2(200, game.groundLevel - game.box.Size.Y);// Reset player position
+            game.box.Position = new Vector2(200, game.groundLevel - game.box.Size.Y);// Reset player position
             IsDone = true; // End the episode for out-of-bounds behavior
         }
 
