@@ -220,12 +220,17 @@ class PPO
         return (trajectory, totalReward);
     }
 
-    public void Train(GameEnvironment env, int episodes)
+    public void Train(GameEnvironment env, int episodes, string modelPath, string progressPath)
     {
         double bestReward = double.MinValue;
         double averageReward = 0;
         int episodesSinceImprovement = 0;
-
+        if (File.Exists(progressPath))
+        {
+            var progress = LoadProgress(progressPath);
+            episodes = progress.episode;
+            bestReward = progress.bestReward;
+        }
         for (int episode = 0; episode < episodes; episode++)
         {
             var (trajectory, totalReward) = CollectTrajectory(env);
@@ -258,13 +263,15 @@ class PPO
                 Console.WriteLine($"Value Loss: {valueLosses.LastOrDefault():F4}");
                 Console.WriteLine($"Entropy: {entropyValues.LastOrDefault():F4}");
                 Console.WriteLine("--------------------");
+                SaveProgress(progressPath, episode, bestReward, episodeRewards.TakeLast(100).Select(r => (int)r).ToList());
             }
 
             // Save best model
             if (averageReward > bestReward)
             {
                 bestReward = averageReward;
-                SaveModel("best_model.json");
+                System.Console.WriteLine("Saving best model...");
+                SaveModel(modelPath);
                 episodesSinceImprovement = 0;
             }
             else
@@ -273,7 +280,7 @@ class PPO
             }
 
             // Early stopping
-            if (episodesSinceImprovement > 900)
+            if (episodesSinceImprovement > 200)
             {
                 Console.WriteLine("Early stopping triggered - No improvement for 200 episodes");
                 break;
@@ -294,7 +301,14 @@ class PPO
         string json = File.ReadAllText(filePath);
         var model = JsonSerializer.Deserialize<dynamic>(json);
 
-
+        policyWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(model.Policy1.ToString()));
+        policyWeights2 = JsonSerializer.Deserialize<double[]>(model.Policy2.ToString());
+        policyWeights3 = JsonSerializer.Deserialize<double[]>(model.Policy3.ToString());
+        policyOutputWeights = JsonSerializer.Deserialize<double[]>(model.PolicyOutput.ToString());
+        valueWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(model.Value1.ToString()));
+        valueWeights2 = JsonSerializer.Deserialize<double[]>(model.Value2.ToString());
+        valueWeights3 = JsonSerializer.Deserialize<double[]>(model.Value3.ToString());
+        valueOutputWeights = JsonSerializer.Deserialize<double[]>(model.ValueOutput.ToString());
     }
 
     /// <summary>
@@ -340,6 +354,16 @@ class PPO
     {
         var model = new
         {
+            POLICY1 = ConvertToJaggedArray(policyWeights1),
+            POLICY2 = ConvertToJaggedArray(policyWeights2),
+            POLICY3 = ConvertToJaggedArray(policyWeights3),
+            POLICY_OUTPUT = policyOutputWeights,
+
+            VALUE1 = ConvertToJaggedArray(valueWeights1),
+            VALUE2 = ConvertToJaggedArray(valueWeights2),
+            VALUE3 = ConvertToJaggedArray(valueWeights3),
+            VALUE_OUTPUT = valueOutputWeights
+
 
         };
 
@@ -366,6 +390,36 @@ class PPO
         File.WriteAllText(filePath, json);
     }
 
+    private static double[][] ConvertToJaggedArray(double[,] array)
+    {
+        int rows = array.GetLength(0);
+        int cols = array.GetLength(1);
+        double[][] jaggedArray = new double[rows][];
+        for (int i = 0; i < rows; i++)
+        {
+            jaggedArray[i] = new double[cols];
+            for (int j = 0; j < cols; j++)
+            {
+                jaggedArray[i][j] = array[i, j];
+            }
+        }
+        return jaggedArray;
+    }
+
+    private static double[,] ConvertTo2DArray(double[][] jaggedArray)
+    {
+        int rows = jaggedArray.Length;
+        int cols = jaggedArray[0].Length;
+        double[,] array = new double[rows, cols];
+        for (int i = 0; i < rows; i++)
+        {
+            for (int j = 0; j < cols; j++)
+            {
+                array[i, j] = jaggedArray[i][j];
+            }
+        }
+        return array;
+    }
     /// <summary>
     /// Samples an action from a probability distribution over actions.
     /// </summary>

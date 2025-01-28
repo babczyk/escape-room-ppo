@@ -127,19 +127,15 @@ namespace AI_project_escapeRoom
             // Calculate the direction of the player's movement (current position - previous position)
             Vector2 movementDirection = player.Position - previousPlayerPosition;
 
-            // Check if the player's movement aligns with the direction to the target
-            if (directionToTarget.Length() == 0 || movementDirection.Length() == 0)
-            {
-                return false; // No movement or the player is at the target
-            }
-
-            // Normalize both vectors and calculate the dot product
-            float dotProduct = Vector2.Dot(Vector2.Normalize(directionToTarget), Vector2.Normalize(movementDirection));
-
+            // Normalize both vectors
+            Vector2 normalizedDirectionToTarget = Vector2.Normalize(directionToTarget);
+            Vector2 normalizedMovementDirection = Vector2.Normalize(movementDirection);
+            // Calculate the dot product
+            float dotProduct = Vector2.Dot(normalizedDirectionToTarget, normalizedMovementDirection);
             // If the dot product is close to 1, the player is moving toward the target
+            // Use a threshold to account for precision errors
             return dotProduct > 0.9f;
         }
-
 
         private void StartTraining()
         {
@@ -153,7 +149,7 @@ namespace AI_project_escapeRoom
             {
                 await Task.Run(() =>
                 {
-                    ppo.Train(gameEnvironment, 1000);
+                    ppo.Train(gameEnvironment, 1000, "ppo_model", "ppo_model.meta");
                 }, token);
 
                 // Switch to manual mode after training
@@ -261,9 +257,9 @@ namespace AI_project_escapeRoom
 
 
                 // Example usage of new functions
-                if (IsIdle()) Console.WriteLine("Player is idle.");
                 if (IsExploringNewArea()) Console.WriteLine("Player is exploring a new area.");
                 if (IsMovingToward(box, lastPlayerPosition)) Console.WriteLine("Player is moving toward the box.");
+                if (IsIdle()) Console.WriteLine("Player is idle.");
             }
 
             base.Update(gameTime);
