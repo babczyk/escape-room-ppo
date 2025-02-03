@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -225,6 +226,7 @@ class PPO
         double bestReward = double.MinValue;
         double averageReward = 0;
         int episodesSinceImprovement = 0;
+        System.Console.WriteLine(progressPath);
         if (File.Exists(progressPath))
         {
             var progress = LoadProgress(progressPath);
@@ -263,7 +265,7 @@ class PPO
                 Console.WriteLine($"Value Loss: {valueLosses.LastOrDefault():F4}");
                 Console.WriteLine($"Entropy: {entropyValues.LastOrDefault():F4}");
                 Console.WriteLine("--------------------");
-                SaveProgress(progressPath, episode, bestReward, episodeRewards.TakeLast(100).Select(r => (int)r).ToList());
+                SaveProgress(progressPath, episode, bestReward, episodeRewards);
             }
 
             // Save best model
@@ -300,6 +302,8 @@ class PPO
 
         string json = File.ReadAllText(filePath);
         var model = JsonSerializer.Deserialize<dynamic>(json);
+        if (model == null)
+            throw new InvalidOperationException("Failed to deserialize model.");
 
         policyWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(model.Policy1.ToString()));
         policyWeights2 = JsonSerializer.Deserialize<double[]>(model.Policy2.ToString());
@@ -321,6 +325,9 @@ class PPO
     {
         string json = File.ReadAllText(filePath);
         var progress = JsonSerializer.Deserialize<JsonElement>(json);
+        string absolutePath = Path.GetFullPath(filePath);
+
+        Console.WriteLine($"Absolute Path: {absolutePath}");
         Console.WriteLine(progress);
 
         // Accessing specific properties:
@@ -378,7 +385,7 @@ class PPO
     /// <param name="episode"></param>
     /// <param name="bestReward"></param>
     /// <param name="recentRewards"></param>
-    public void SaveProgress(string filePath, int episode, double bestReward, List<int> recentRewards)
+    public void SaveProgress(string filePath, int episode, double bestReward, List<double> recentRewards)
     {
         var progress = new
         {
