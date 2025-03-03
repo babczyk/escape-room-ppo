@@ -4,10 +4,12 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using System.Linq;
+using System.Diagnostics;
+using System;
 class GameEnvironment
 {
     private Game1 game;
-    private int maxSteps = 500;
+    private int maxSteps = 2000;
     private int currentStep;
 
     public GameEnvironment(Game1 game)
@@ -45,79 +47,72 @@ class GameEnvironment
             case 3: game.player.Grab(game.box); break; // Interact (e.g., pick up the box)
             case 4: game.player.DropHeldBox(); break; // Interact (e.g., drop the box)
         }
-
-        // Rewards for key objectives
-        if (game.box.Intersects(game.button))
-        {
-            reward += 100; // Major reward for placing the box on the button
-            game.IsPressed = true; // Mark the button as activated
-        }
-
-        if (game.player.Intersects(game.box))
-        {
-            reward += 20; // Reward for successfully picking up or interacting with the box
-        }
-
-        if (game.player.Intersects(game.door) && game.IsPressed)
-        {
-            reward += 200; // High reward for completing the goal
-            IsDone = true; // Mark the episode as complete
-        }
-
-        // Encouraging progress
+        ///////////////////////////////
+        // Rewards for key objectives//
+        ///////////////////////////////
+        // Small continuous rewards for correct behaviors
         if (game.IsMovingToward(game.box, game.lastPlayerPosition))
         {
-            reward += 5; // Encourage moving toward the box
+            reward += 1; // Encourage moving toward the box
         }
 
-        if (game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null)
+        if (game.player.heldBox != null && game.IsMovingToward(game.button, game.lastPlayerPosition))
         {
-            reward += 10; // Higher reward for moving the box closer to the button
+            reward += 5; // Encourage moving toward button while holding the box
         }
 
-        if (game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed)
+        if (game.box.Intersects(game.button) && !game.previousBoxState)
         {
-            reward += 10; // Reward for heading toward the door after activating the button
+            reward += 100; // Reward for **placing** the box on the button
+            game.IsPressed = true;
+            game.previousBoxState = true; // Prevent continuous reward abuse
         }
 
-        // Exploration and activity
+        if (game.previousBoxState && game.player.Intersects(game.door))
+        {
+            reward += 200; // Reward for completing the goal
+            IsDone = true;
+        }
+
+        // Slight reward for progress toward the door **only** if button is pressed
+        if (game.IsPressed && game.IsMovingToward(game.door, game.lastPlayerPosition))
+        {
+            reward += 3;
+        }
+
+        /* Exploration reward
         if (game.IsExploringNewArea())
         {
-            reward += 2; // Small reward for exploring new areas
+            reward += 2;
+        }
+        */
+        // **Penalties**
+        if (!game.box.Intersects(game.button) && game.player.Intersects(game.door))
+        {
+            reward -= 20; // Lower penalty (was too harsh)
         }
 
         if (game.IsIdle())
         {
-            reward -= 2; // Slight penalty for standing still to encourage movement
+            reward -= 3; // Increased penalty for inactivity
         }
 
-        // Penalties for mistakes
-        if (!game.box.Intersects(game.button) && game.player.Intersects(game.door))
+        // Out of bounds penalties
+        if (IsOutOfBounds(game.player) || IsOutOfBounds(game.box))
         {
-            reward -= 50; // Penalty for trying to exit without solving the puzzle
+            reward -= 10;
+            ResetPlayerAndBox();
+            IsDone = true;
         }
 
+        // Maximum steps penalty
         if (currentStep >= maxSteps)
         {
-            reward -= 10; // Increased penalty for exceeding step limit
-            ResetPlayerAndBox(); // Reset positions
-            IsDone = true; // End the episode
+            reward -= 5; // Lowered penalty to allow learning
+            ResetPlayerAndBox();
+            IsDone = true;
         }
-
-        if (IsOutOfBounds(game.player))
-        {
-            reward -= 20; // Penalty for going out of bounds
-            ResetPlayerPosition(); // Reset player position
-            IsDone = true; // End the episode
-        }
-
-        if (IsOutOfBounds(game.box))
-        {
-            reward -= 20; // Penalty for box out of bounds
-            ResetBoxPosition(); // Reset box position
-            IsDone = true; // End the episode
-        }
-
+        Console.WriteLine($"Reward: {reward}");
         return (GetState(), reward, IsDone);
     }
 

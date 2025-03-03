@@ -48,6 +48,8 @@ namespace AI_project_escapeRoom
         public Vector2 lastPlayerPosition;
         private int idleSteps = 0;
         private HashSet<Point> visitedAreas = new HashSet<Point>();
+        public bool previousBoxState = false;
+
 
         public Game1()
         {
@@ -149,7 +151,7 @@ namespace AI_project_escapeRoom
             {
                 await Task.Run(() =>
                 {
-                    ppo.Train(gameEnvironment, 1000, "ppo_prog", "ppo_model.meta");
+                    ppo.Train(gameEnvironment, 1000000, "ppo_prog", "ppo_model.meta");
                 }, token);
 
                 // Switch to manual mode after training
@@ -255,11 +257,6 @@ namespace AI_project_escapeRoom
                 // Button interaction logic
                 UpdateButtonState();
 
-
-                // Example usage of new functions
-                if (IsExploringNewArea()) Console.WriteLine("Player is exploring a new area.");
-                if (IsMovingToward(box, lastPlayerPosition)) Console.WriteLine("Player is moving toward the box.");
-                if (IsIdle()) Console.WriteLine("Player is idle.");
             }
 
             base.Update(gameTime);

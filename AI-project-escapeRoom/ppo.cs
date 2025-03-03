@@ -226,7 +226,6 @@ class PPO
         double bestReward = double.MinValue;
         double averageReward = 0;
         int episodesSinceImprovement = 0;
-        System.Console.WriteLine(progressPath);
         if (File.Exists(progressPath))
         {
             var progress = LoadProgress(progressPath);
