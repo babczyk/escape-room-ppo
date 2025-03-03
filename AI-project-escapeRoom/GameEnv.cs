@@ -6,12 +6,13 @@ using Microsoft.Xna.Framework.Input;
 using System.Linq;
 using System.Diagnostics;
 using System;
+using System.IO;
+
 class GameEnvironment
 {
     private Game1 game;
     private int maxSteps = 2000;
     private int currentStep;
-
     public GameEnvironment(Game1 game)
     {
         this.game = game;
@@ -50,15 +51,18 @@ class GameEnvironment
         ///////////////////////////////
         // Rewards for key objectives//
         ///////////////////////////////
+        Console.Write("Reward: " + reward);
         // Small continuous rewards for correct behaviors
         if (game.IsMovingToward(game.box, game.lastPlayerPosition))
         {
-            reward += 1; // Encourage moving toward the box
+            //reward += 3; // Encourage moving toward the box
+            //Console.Write("+" + 3);
         }
 
         if (game.player.heldBox != null && game.IsMovingToward(game.button, game.lastPlayerPosition))
         {
-            reward += 5; // Encourage moving toward button while holding the box
+            reward += 10; // Encourage moving toward button while holding the box
+            Console.Write("+" + 10);
         }
 
         if (game.box.Intersects(game.button) && !game.previousBoxState)
@@ -66,18 +70,21 @@ class GameEnvironment
             reward += 100; // Reward for **placing** the box on the button
             game.IsPressed = true;
             game.previousBoxState = true; // Prevent continuous reward abuse
+            Console.Write("+" + 100);
         }
 
         if (game.previousBoxState && game.player.Intersects(game.door))
         {
             reward += 200; // Reward for completing the goal
             IsDone = true;
+            Console.Write("+" + 200);
         }
 
         // Slight reward for progress toward the door **only** if button is pressed
         if (game.IsPressed && game.IsMovingToward(game.door, game.lastPlayerPosition))
         {
-            reward += 3;
+            reward += 7;
+            Console.Write("+" + 7);
         }
 
         /* Exploration reward
@@ -90,29 +97,42 @@ class GameEnvironment
         if (!game.box.Intersects(game.button) && game.player.Intersects(game.door))
         {
             reward -= 20; // Lower penalty (was too harsh)
+            Console.Write("-" + 20);
         }
-
+        /*
         if (game.IsIdle())
         {
-            reward -= 3; // Increased penalty for inactivity
+            reward -= 20; // Increased penalty for inactivity
         }
-
+        */
         // Out of bounds penalties
         if (IsOutOfBounds(game.player) || IsOutOfBounds(game.box))
         {
-            reward -= 10;
+            reward -= 20;
             ResetPlayerAndBox();
             IsDone = true;
+            Console.Write("-" + 20);
         }
-
+        //moveing away from goal panalty
+        if (!game.IsMovingToward(game.box, game.lastPlayerPosition)
+        || !game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null
+        || !game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed)
+        {
+            reward -= 15;
+            Console.Write("-" + 15);
+        }
         // Maximum steps penalty
         if (currentStep >= maxSteps)
         {
-            reward -= 5; // Lowered penalty to allow learning
+            reward -= 150; // Lowered penalty to allow learning
             ResetPlayerAndBox();
             IsDone = true;
+            Console.Write("-" + 150);
         }
-        Console.WriteLine($"Reward: {reward}");
+
+
+        Console.WriteLine("Total Reward: " + reward);
+
         return (GetState(), reward, IsDone);
     }
 
