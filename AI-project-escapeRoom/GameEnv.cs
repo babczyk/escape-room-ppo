@@ -7,11 +7,12 @@ using System.Linq;
 using System.Diagnostics;
 using System;
 using System.IO;
+using System.Threading;
 
 class GameEnvironment
 {
     private Game1 game;
-    private int maxSteps = 2000;
+    private int maxSteps = 5000;
     private int currentStep;
     public GameEnvironment(Game1 game)
     {
@@ -132,7 +133,7 @@ class GameEnvironment
 
 
         Console.WriteLine("Total Reward: " + reward);
-
+        Thread.Sleep(10);
         return (GetState(), reward, IsDone);
     }
 

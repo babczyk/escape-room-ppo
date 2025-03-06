@@ -215,7 +215,6 @@ class PPO
             }
 
             state = nextState;
-            Thread.Sleep(10); // Visualization delay
         }
 
         return (trajectory, totalReward);
@@ -252,10 +251,10 @@ class PPO
 
             // Track metrics
             episodeRewards.Add(totalReward);
-            averageReward = episodeRewards.TakeLast(100).Average();
+            averageReward = episodeRewards.Average();
 
             // Log progress
-            if (episode % 10 == 0)
+            if (episode % 5 == 0)
             {
                 Console.WriteLine($"Episode {episode}:");
                 Console.WriteLine($"Total Reward: {totalReward:F2}");
