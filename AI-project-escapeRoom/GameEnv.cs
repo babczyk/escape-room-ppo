@@ -133,7 +133,7 @@ class GameEnvironment
 
 
         Console.WriteLine("Total Reward: " + reward);
-        Thread.Sleep(10);
+        Thread.Sleep(1);
         return (GetState(), reward, IsDone);
     }
 

@@ -225,13 +225,14 @@ class PPO
         double bestReward = double.MinValue;
         double averageReward = 0;
         int episodesSinceImprovement = 0;
+        int episode = 0;
         if (File.Exists(progressPath))
         {
             var progress = LoadProgress(progressPath);
-            episodes = progress.episode;
+            episode = progress.episode;
             bestReward = progress.bestReward;
         }
-        for (int episode = 0; episode < episodes; episode++)
+        for (; episode < episodes; episode++)
         {
             var (trajectory, totalReward) = CollectTrajectory(env);
 
@@ -251,14 +252,14 @@ class PPO
 
             // Track metrics
             episodeRewards.Add(totalReward);
-            averageReward = episodeRewards.Average();
+            averageReward = episodeRewards.TakeLast(100).Average();
 
             // Log progress
             if (episode % 5 == 0)
             {
                 Console.WriteLine($"Episode {episode}:");
                 Console.WriteLine($"Total Reward: {totalReward:F2}");
-                Console.WriteLine($"Average Reward (last 100): {averageReward:F2}");
+                Console.WriteLine($"Average Reward: {averageReward:F2}");
                 Console.WriteLine($"Policy Loss: {policyLosses.LastOrDefault():F4}");
                 Console.WriteLine($"Value Loss: {valueLosses.LastOrDefault():F4}");
                 Console.WriteLine($"Entropy: {entropyValues.LastOrDefault():F4}");

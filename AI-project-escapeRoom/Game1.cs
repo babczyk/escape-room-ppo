@@ -155,6 +155,7 @@ namespace AI_project_escapeRoom
                 }, token);
 
                 // Switch to manual mode after training
+                Console.WriteLine("Training completed.");
                 isTraining = false;
             }
             catch (OperationCanceledException)
