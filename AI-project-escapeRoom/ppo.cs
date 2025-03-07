@@ -252,7 +252,7 @@ class PPO
 
             // Track metrics
             episodeRewards.Add(totalReward);
-            averageReward = episodeRewards.TakeLast(5).Average(); //take an avrege of 5 episodes (5 generations)
+            averageReward = episodeRewards.TakeLast(50).Average(); //take an avrege of 50 episodes (50 generations)
             Console.WriteLine($"avrege reward {averageReward}:");
             // Log progress
             if (episode % 5 == 0)
@@ -271,8 +271,9 @@ class PPO
             if (averageReward > bestReward)
             {
                 bestReward = averageReward;
-                System.Console.WriteLine("Saving best model...");
-                SaveModel(modelPath);
+                Console.WriteLine("Saving best model...");
+                SaveModel(modelPath, episode);
+                LoadModel(modelPath);
                 episodesSinceImprovement = 0;
             }
             else
@@ -297,21 +298,63 @@ class PPO
     private void LoadModel(string filePath)
     {
         if (!File.Exists(filePath))
-            throw new FileNotFoundException("Model file not found.");
+            throw new FileNotFoundException($"Model file not found at {filePath}");
 
-        string json = File.ReadAllText(filePath);
-        var model = JsonSerializer.Deserialize<dynamic>(json);
-        if (model == null)
-            throw new InvalidOperationException("Failed to deserialize model.");
+        try
+        {
+            string json = File.ReadAllText(filePath);
 
-        policyWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(model.Policy1.ToString()));
-        policyWeights2 = JsonSerializer.Deserialize<double[]>(model.Policy2.ToString());
-        policyWeights3 = JsonSerializer.Deserialize<double[]>(model.Policy3.ToString());
-        policyOutputWeights = JsonSerializer.Deserialize<double[]>(model.PolicyOutput.ToString());
-        valueWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(model.Value1.ToString()));
-        valueWeights2 = JsonSerializer.Deserialize<double[]>(model.Value2.ToString());
-        valueWeights3 = JsonSerializer.Deserialize<double[]>(model.Value3.ToString());
-        valueOutputWeights = JsonSerializer.Deserialize<double[]>(model.ValueOutput.ToString());
+            // Use JsonDocument for more flexible parsing
+            using (JsonDocument document = JsonDocument.Parse(json))
+            {
+                var root = document.RootElement;
+
+                // Get policy weights (use case-insensitive property matching)
+                var policy1Property = GetProperty(root, "POLICY1");
+                var policy2Property = GetProperty(root, "POLICY2");
+                var policy3Property = GetProperty(root, "POLICY3");
+                var policyOutputProperty = GetProperty(root, "POLICY_OUTPUT");
+
+                // Get value weights
+                var value1Property = GetProperty(root, "VALUE1");
+                var value2Property = GetProperty(root, "VALUE2");
+                var value3Property = GetProperty(root, "VALUE3");
+                var valueOutputProperty = GetProperty(root, "VALUE_OUTPUT");
+
+                // Deserialize with appropriate types
+                policyWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(policy1Property.GetRawText()));
+                policyWeights2 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(policy2Property.GetRawText()));
+                policyWeights3 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(policy3Property.GetRawText()));
+                policyOutputWeights = JsonSerializer.Deserialize<double[]>(policyOutputProperty.GetRawText());
+
+                valueWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(value1Property.GetRawText()));
+                valueWeights2 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(value2Property.GetRawText()));
+                valueWeights3 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(value3Property.GetRawText()));
+                valueOutputWeights = JsonSerializer.Deserialize<double[]>(valueOutputProperty.GetRawText());
+            }
+
+            Console.WriteLine($"Model successfully loaded from {filePath}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading model: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+            throw; // Re-throw the exception to make sure it doesn't fail silently
+        }
+    }
+
+    // Helper method to get property with case-insensitive matching
+    private JsonElement GetProperty(JsonElement element, string propertyName)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return property.Value;
+            }
+        }
+
+        throw new KeyNotFoundException($"Property '{propertyName}' not found in JSON");
     }
 
     /// <summary>
@@ -356,10 +399,11 @@ class PPO
     /// </summary>
     /// <param name="filePath"></param>
     /// <param name="model"></param>
-    private void SaveModel(string filePath)
+    private void SaveModel(string filePath, int episode = 1)
     {
         var model = new
         {
+            IN_EPESODE = episode,
             POLICY1 = ConvertToJaggedArray(policyWeights1),
             POLICY2 = ConvertToJaggedArray(policyWeights2),
             POLICY3 = ConvertToJaggedArray(policyWeights3),
@@ -606,8 +650,8 @@ class PPO
         entropy /= batchSize;
 
         // Track metrics
-        System.Console.WriteLine(policyLoss);
-        System.Console.WriteLine(valueLoss);
+        //Console.WriteLine(policyLoss);
+        //Console.WriteLine(valueLoss);
         policyLosses.Add(policyLoss);
         valueLosses.Add(valueLoss);
         entropyValues.Add(entropy);
