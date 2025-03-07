@@ -5,6 +5,7 @@ using System.Linq;
 using System;
 using System.Threading.Tasks;
 using System.Threading;
+using System.Collections.Generic;
 
 namespace AI_project_escapeRoom
 {
@@ -43,6 +44,13 @@ namespace AI_project_escapeRoom
         public int ScreenWidth = 1280;
         public int ScreenHeight = 720;
 
+        // Helper variables for new functions
+        public Vector2 lastPlayerPosition;
+        private int idleSteps = 0;
+        private HashSet<Point> visitedAreas = new HashSet<Point>();
+        public bool previousBoxState = false;
+
+
         public Game1()
         {
             _graphics = new GraphicsDeviceManager(this);
@@ -76,6 +84,61 @@ namespace AI_project_escapeRoom
             }
         }
 
+        // New Function: IsIdle
+        public bool IsIdle()
+        {
+            if (player.Position == lastPlayerPosition)
+            {
+                idleSteps++;
+            }
+            else
+            {
+                idleSteps = 0; // Reset idle steps if the player moves
+                lastPlayerPosition = player.Position;
+            }
+
+            // Consider idle if no movement for more than 30 steps
+            return idleSteps > 30;
+        }
+
+        // New Function: IsExploringNewArea
+        public bool IsExploringNewArea()
+        {
+            // Define a grid-like area system for simplicity
+            Point currentArea = new Point(
+                (int)(player.Position.X / 50), // Divide by tile or grid size
+                (int)(player.Position.Y / 50)
+            );
+
+            // Check if the area has been visited
+            if (!visitedAreas.Contains(currentArea))
+            {
+                visitedAreas.Add(currentArea); // Mark the area as visited
+                return true; // Player is exploring a new area
+            }
+
+            return false; // Area already visited
+        }
+
+        // New Function: IsMovingToward
+        public bool IsMovingToward(GameObject target, Vector2 previousPlayerPosition)
+        {
+            // Calculate the direction from the player's previous position to the target
+            Vector2 directionToTarget = target.Position - previousPlayerPosition;
+
+            // Calculate the direction of the player's movement (current position - previous position)
+            Vector2 movementDirection = player.Position - previousPlayerPosition;
+
+            // Normalize both vectors
+            Vector2 normalizedDirectionToTarget = Vector2.Normalize(directionToTarget);
+            Vector2 normalizedMovementDirection = Vector2.Normalize(movementDirection);
+            // Calculate the dot product
+            float dotProduct = Vector2.Dot(normalizedDirectionToTarget, normalizedMovementDirection);
+            // If the dot product is close to 1, the player is moving toward the target
+            // Use a threshold to account for precision errors
+            return dotProduct > 0.9f;
+        }
+
         private void StartTraining()
         {
             cancellationSource = new CancellationTokenSource();
@@ -88,10 +151,11 @@ namespace AI_project_escapeRoom
             {
                 await Task.Run(() =>
                 {
-                    ppo.Train(gameEnvironment, 1000);
+                    ppo.Train(gameEnvironment, 1000000, "ppo_prog", "ppo_model.meta");
                 }, token);
 
                 // Switch to manual mode after training
+                Console.WriteLine("Training completed.");
                 isTraining = false;
             }
             catch (OperationCanceledException)
@@ -193,6 +257,7 @@ namespace AI_project_escapeRoom
 
                 // Button interaction logic
                 UpdateButtonState();
+
             }
 
             base.Update(gameTime);
