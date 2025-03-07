@@ -253,7 +253,7 @@ class PPO
             // Track metrics
             episodeRewards.Add(totalReward);
             averageReward = episodeRewards.TakeLast(5).Average(); //take an avrege of 5 episodes (5 generations)
-
+            Console.WriteLine($"avrege reward {averageReward}:");
             // Log progress
             if (episode % 5 == 0)
             {
