@@ -115,8 +115,7 @@ class GameEnvironment
             Console.Write("-" + 20);
         }
         //moveing away from goal panalty
-        if (!game.IsMovingToward(game.box, game.lastPlayerPosition)
-        || !game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null
+        if (!game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null
         || !game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed)
         {
             reward -= 15;
