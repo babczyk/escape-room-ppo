@@ -4,7 +4,7 @@ using Microsoft.Xna.Framework.Graphics;
 
 public class Player : GameObject
 {
-    private Box heldBox;
+    public Box heldBox;
 
     public Player(Vector2 position, Vector2 size, String roll = "PLAYER", float gravity = 9.8f, float terminalVelocity = 1000f)
         : base(position, size, roll, gravity, terminalVelocity) { }

@@ -1,60 +1,77 @@
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using Microsoft.Xna.Framework;
 
 class PPO
 {
-    /// <summary>
-    /// Policy network weights for the first layer.
-    /// </summary>
+    // Neural network architecture
+    private const int HIDDEN_LAYER_1_SIZE = 128;
+    private const int HIDDEN_LAYER_2_SIZE = 64;
+    private const int HIDDEN_LAYER_3_SIZE = 32;
+
+    // Network weights
     private double[,] policyWeights1;
+    private double[,] policyWeights2;
+    private double[,] policyWeights3;
+    private double[] policyOutputWeights;
 
-    /// <summary>
-    /// Policy network weights for the second layer.
-    /// </summary>
-    private double[] policyWeights2;
-
-    /// <summary>
-    /// Value network weights for the first layer.
-    /// </summary>
     private double[,] valueWeights1;
+    private double[,] valueWeights2;
+    private double[,] valueWeights3;
+    private double[] valueOutputWeights;
 
-    /// <summary>
-    /// Value network weights for the second layer.
-    /// </summary>
-    private double[] valueWeights2;
+    // Hyperparameters
+    private const double GAMMA = 0.99f;
+    private const double CLIP_EPSILON = 0.2f;
+    private const double LEARNING_RATE = 0.0003f;
+    private const int EPOCHS = 4;
+    private const double ENTROPY_COEF = 0.01f;
+    private const double VALUE_COEF = 0.5f;
+    private const int BATCH_SIZE = 64;
 
-    private const double Gamma = 0.99f;
-    private const double ClipEpsilon = 0.2f;
-    private const double LearningRate = 0.0005f;
-    private const int Epochs = 4;
-    private const int HiddenSize = 64;
-    private const double EntropyCoef = 0.02f;
+    // Training metrics
+    private List<double> episodeRewards;
+    private List<double> policyLosses;
+    private List<double> valueLosses;
+    private List<double> entropyValues;
 
     private Random random;
     private int stateSize;
+    private int actionSize;
 
 
     /// <summary>
     /// Initializes a new instance of the PPO class.
     /// Sets up the neural networks for both policy and value functions.
     /// </summary>
-    public PPO()
+    public PPO(int stateSize = 6, int actionSize = 5)
     {
+        this.stateSize = stateSize;
+        this.actionSize = actionSize;
         random = new Random();
-        // For a 10x10 grid, relative positions can be in range [-9,9] for both row and col
-        // So state space is 19 * 19 = 361
-        stateSize = 361;
 
-        // Initialize policy network weights
-        policyWeights1 = InitializeWeights(stateSize, HiddenSize);
-        policyWeights2 = InitializeWeights(HiddenSize, 4).Cast<double>().ToArray();
+        // Initialize policy network
+        policyWeights1 = InitializeWeights(stateSize, HIDDEN_LAYER_1_SIZE);
+        policyWeights2 = InitializeWeights(HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE);
+        policyWeights3 = InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
+        policyOutputWeights = InitializeWeights(HIDDEN_LAYER_3_SIZE, actionSize).Cast<double>().ToArray();
 
-        // Initialize value network weights
-        valueWeights1 = InitializeWeights(stateSize, HiddenSize);
-        valueWeights2 = InitializeWeights(HiddenSize, 1).Cast<double>().ToArray();
+        // Initialize value network
+        valueWeights1 = InitializeWeights(stateSize, HIDDEN_LAYER_1_SIZE);
+        valueWeights2 = InitializeWeights(HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE);
+        valueWeights3 = InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
+        valueOutputWeights = InitializeWeights(HIDDEN_LAYER_3_SIZE, 1).Cast<double>().ToArray();
+
+        // Initialize metrics
+        episodeRewards = new List<double>();
+        policyLosses = new List<double>();
+        valueLosses = new List<double>();
+        entropyValues = new List<double>();
     }
 
     /// <summary>
@@ -123,37 +140,13 @@ class PPO
         return exp.Select(v => v / sum).ToArray();
     }
 
-
-    /// <summary>
-    /// Computes action probabilities for a given state using the policy network.
-    /// </summary>
-    /// <param name="stateVector">Vector representation of the state</param>
-    /// <returns>Probability distribution over possible actions</returns>
-    private double[] Policy(double[] stateVector)
-    {
-        var hidden = ReLU(LinearLayer(stateVector, policyWeights1));
-        var logits = LinearLayer(hidden, new double[HiddenSize, 4], policyWeights2);
-        return Softmax(logits);
-    }
-    /// <summary>
-    /// Estimates the value of a state using the value network.
-    /// </summary>
-    /// <param name="stateVector">Vector representation of the state</param>
-    /// <returns>Estimated value of the state</returns>
-    private double Value(double[] stateVector)
-    {
-        var hidden = ReLU(LinearLayer(stateVector, valueWeights1));
-        var value = LinearLayer(hidden, new double[HiddenSize, 1], valueWeights2);
-        return value[0];
-    }
-
     /// <summary>
     /// Computes advantages using Generalized Advantage Estimation (GAE).
     /// </summary>
     /// <param name="rewards">List of rewards from the episode</param>
     /// <param name="values">List of estimated state values</param>
     /// <returns>List of normalized advantages</returns>
-    private List<double> ComputeAdvantages(List<int> rewards, List<double> values)
+    private List<double> ComputeAdvantages(List<Double> rewards, List<double> values)
     {
         List<double> advantages = new List<double>();
         double nextValue = 0;
@@ -161,8 +154,8 @@ class PPO
 
         for (int t = rewards.Count - 1; t >= 0; t--)
         {
-            double delta = rewards[t] + Gamma * nextValue - values[t];
-            advantage = delta + Gamma * 0.95f * advantage;
+            double delta = rewards[t] + GAMMA * nextValue - values[t];
+            advantage = delta + GAMMA * 0.95f * advantage;
             advantages.Insert(0, advantage);
             nextValue = values[t];
         }
@@ -177,14 +170,61 @@ class PPO
         return advantages;
     }
 
-    /// <summary>
-    /// Trains the agent using the PPO algorithm.
-    /// </summary>
-    /// <param name="env">The environment to train in</param>
-    /// <param name="episodes">Number of episodes to train for</param>
-    public void Train(int episodes, string modelPath, string progressPath)
+    private double[] PolicyForward(double[] input)
+    {
+        var layer1 = ReLU(LinearLayer(input, policyWeights1));
+        var layer2 = ReLU(LinearLayer(layer1, policyWeights2));
+        var layer3 = ReLU(LinearLayer(layer2, policyWeights3));
+        var output = LinearLayer(layer3, new double[HIDDEN_LAYER_3_SIZE, actionSize], policyOutputWeights);
+        return Softmax(output);
+    }
+
+    private double ValueForward(double[] input)
+    {
+        var layer1 = ReLU(LinearLayer(input, valueWeights1));
+        var layer2 = ReLU(LinearLayer(layer1, valueWeights2));
+        var layer3 = ReLU(LinearLayer(layer2, valueWeights3));
+        var output = LinearLayer(layer3, new double[HIDDEN_LAYER_3_SIZE, 1], valueOutputWeights);
+        return output[0];
+    }
+
+    private (TrajectoryData trajectory, double totalReward) CollectTrajectory(GameEnvironment env)
+    {
+        var trajectory = new TrajectoryData();
+        double totalReward = 0;
+        double[] state = env.GetState();
+        bool done = false;
+
+        while (!done)
+        {
+            double[] stateVector = state.Select(s => (double)s).ToArray();
+            double[] actionProbs = PolicyForward(stateVector);
+            int action = SampleAction(actionProbs);
+            double actionProb = actionProbs[action];
+            double valueEstimate = ValueForward(stateVector);
+            trajectory.AddStep(stateVector, action, actionProb, valueEstimate);
+
+            var (nextState, reward, isDone) = env.Step(action);
+            totalReward += reward;
+            trajectory.rewards.Add(reward);
+
+            if (isDone)
+            {
+                done = true;
+                trajectory.advantages = ComputeAdvantages(trajectory.rewards, trajectory.values);
+            }
+
+            state = nextState;
+        }
+
+        return (trajectory, totalReward);
+    }
+
+    public void Train(GameEnvironment env, int episodes, string modelPath, string progressPath)
     {
         double bestReward = double.MinValue;
+        double averageReward = 0;
+        int episodesSinceImprovement = 0;
         int episode = 0;
         if (File.Exists(progressPath))
         {
@@ -192,7 +232,62 @@ class PPO
             episode = progress.episode;
             bestReward = progress.bestReward;
         }
+        for (; episode < episodes; episode++)
+        {
+            var (trajectory, totalReward) = CollectTrajectory(env);
 
+            // Update networks multiple times with the collected data
+            for (int epoch = 0; epoch < EPOCHS; epoch++)
+            {
+                var batchIndices = Enumerable.Range(0, trajectory.states.Count)
+                    .OrderBy(x => random.Next())
+                    .ToList();
+
+                for (int i = 0; i < batchIndices.Count; i += BATCH_SIZE)
+                {
+                    var batchSlice = batchIndices.Skip(i).Take(BATCH_SIZE);
+                    UpdateNetworksBatch(trajectory, batchSlice.ToList());
+                }
+            }
+
+            // Track metrics
+            episodeRewards.Add(totalReward);
+            averageReward = episodeRewards.TakeLast(50).Average(); //take an avrege of 50 episodes (50 generations)
+            Console.WriteLine($"avrege reward {averageReward}:");
+            // Log progress
+            if (episode % 5 == 0)
+            {
+                Console.WriteLine($"Episode {episode}:");
+                Console.WriteLine($"Total Reward: {totalReward:F2}");
+                Console.WriteLine($"Average Reward: {averageReward:F2}");
+                Console.WriteLine($"Policy Loss: {policyLosses.LastOrDefault():F4}");
+                Console.WriteLine($"Value Loss: {valueLosses.LastOrDefault():F4}");
+                Console.WriteLine($"Entropy: {entropyValues.LastOrDefault():F4}");
+                Console.WriteLine("--------------------");
+                SaveProgress(progressPath, episode, bestReward, episodeRewards);
+            }
+
+            // Save best model
+            if (averageReward > bestReward)
+            {
+                bestReward = averageReward;
+                Console.WriteLine("Saving best model...");
+                SaveModel(modelPath, episode);
+                LoadModel(modelPath);
+                episodesSinceImprovement = 0;
+            }
+            else
+            {
+                episodesSinceImprovement++;
+            }
+
+            // Early stopping
+            if (episodesSinceImprovement > 200)
+            {
+                Console.WriteLine("Early stopping triggered - No improvement for 200 episodes");
+                break;
+            }
+        }
     }
     /// <summary>
     /// Loads a model from a JSON file.
@@ -203,12 +298,63 @@ class PPO
     private void LoadModel(string filePath)
     {
         if (!File.Exists(filePath))
-            throw new FileNotFoundException("Model file not found.");
+            throw new FileNotFoundException($"Model file not found at {filePath}");
 
-        string json = File.ReadAllText(filePath);
-        var model = JsonSerializer.Deserialize<dynamic>(json);
+        try
+        {
+            string json = File.ReadAllText(filePath);
 
+            // Use JsonDocument for more flexible parsing
+            using (JsonDocument document = JsonDocument.Parse(json))
+            {
+                var root = document.RootElement;
 
+                // Get policy weights (use case-insensitive property matching)
+                var policy1Property = GetProperty(root, "POLICY1");
+                var policy2Property = GetProperty(root, "POLICY2");
+                var policy3Property = GetProperty(root, "POLICY3");
+                var policyOutputProperty = GetProperty(root, "POLICY_OUTPUT");
+
+                // Get value weights
+                var value1Property = GetProperty(root, "VALUE1");
+                var value2Property = GetProperty(root, "VALUE2");
+                var value3Property = GetProperty(root, "VALUE3");
+                var valueOutputProperty = GetProperty(root, "VALUE_OUTPUT");
+
+                // Deserialize with appropriate types
+                policyWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(policy1Property.GetRawText()));
+                policyWeights2 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(policy2Property.GetRawText()));
+                policyWeights3 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(policy3Property.GetRawText()));
+                policyOutputWeights = JsonSerializer.Deserialize<double[]>(policyOutputProperty.GetRawText());
+
+                valueWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(value1Property.GetRawText()));
+                valueWeights2 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(value2Property.GetRawText()));
+                valueWeights3 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(value3Property.GetRawText()));
+                valueOutputWeights = JsonSerializer.Deserialize<double[]>(valueOutputProperty.GetRawText());
+            }
+
+            Console.WriteLine($"Model successfully loaded from {filePath}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading model: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+            throw; // Re-throw the exception to make sure it doesn't fail silently
+        }
+    }
+
+    // Helper method to get property with case-insensitive matching
+    private JsonElement GetProperty(JsonElement element, string propertyName)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return property.Value;
+            }
+        }
+
+        throw new KeyNotFoundException($"Property '{propertyName}' not found in JSON");
     }
 
     /// <summary>
@@ -221,6 +367,9 @@ class PPO
     {
         string json = File.ReadAllText(filePath);
         var progress = JsonSerializer.Deserialize<JsonElement>(json);
+        string absolutePath = Path.GetFullPath(filePath);
+
+        Console.WriteLine($"Absolute Path: {absolutePath}");
         Console.WriteLine(progress);
 
         // Accessing specific properties:
@@ -250,10 +399,21 @@ class PPO
     /// </summary>
     /// <param name="filePath"></param>
     /// <param name="model"></param>
-    private void SaveModel(string filePath)
+    private void SaveModel(string filePath, int episode = 1)
     {
         var model = new
         {
+            IN_EPESODE = episode,
+            POLICY1 = ConvertToJaggedArray(policyWeights1),
+            POLICY2 = ConvertToJaggedArray(policyWeights2),
+            POLICY3 = ConvertToJaggedArray(policyWeights3),
+            POLICY_OUTPUT = policyOutputWeights,
+
+            VALUE1 = ConvertToJaggedArray(valueWeights1),
+            VALUE2 = ConvertToJaggedArray(valueWeights2),
+            VALUE3 = ConvertToJaggedArray(valueWeights3),
+            VALUE_OUTPUT = valueOutputWeights
+
 
         };
 
@@ -268,7 +428,7 @@ class PPO
     /// <param name="episode"></param>
     /// <param name="bestReward"></param>
     /// <param name="recentRewards"></param>
-    public void SaveProgress(string filePath, int episode, double bestReward, List<int> recentRewards)
+    public void SaveProgress(string filePath, int episode, double bestReward, List<double> recentRewards)
     {
         var progress = new
         {
@@ -280,6 +440,36 @@ class PPO
         File.WriteAllText(filePath, json);
     }
 
+    private static double[][] ConvertToJaggedArray(double[,] array)
+    {
+        int rows = array.GetLength(0);
+        int cols = array.GetLength(1);
+        double[][] jaggedArray = new double[rows][];
+        for (int i = 0; i < rows; i++)
+        {
+            jaggedArray[i] = new double[cols];
+            for (int j = 0; j < cols; j++)
+            {
+                jaggedArray[i][j] = array[i, j];
+            }
+        }
+        return jaggedArray;
+    }
+
+    private static double[,] ConvertTo2DArray(double[][] jaggedArray)
+    {
+        int rows = jaggedArray.Length;
+        int cols = jaggedArray[0].Length;
+        double[,] array = new double[rows, cols];
+        for (int i = 0; i < rows; i++)
+        {
+            for (int j = 0; j < cols; j++)
+            {
+                array[i, j] = jaggedArray[i][j];
+            }
+        }
+        return array;
+    }
     /// <summary>
     /// Samples an action from a probability distribution over actions.
     /// </summary>
@@ -300,6 +490,124 @@ class PPO
         return actionProbs.Length - 1;
     }
 
+
+    private void UpdateNetworkWeights(double totalLoss)
+    {
+        // Calculate gradients and update policy network weights
+        UpdatePolicyNetworkWeights(totalLoss);
+
+        // Calculate gradients and update value network weights
+        UpdateValueNetworkWeights(totalLoss);
+    }
+
+    private void UpdatePolicyNetworkWeights(double loss)
+    {
+        // Learning rate with decay
+        double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
+
+        // Update policy network layer 1
+        for (int i = 0; i < policyWeights1.GetLength(0); i++)
+        {
+            for (int j = 0; j < policyWeights1.GetLength(1); j++)
+            {
+                // Gradient descent update with momentum
+                double gradient = loss * CalculateLayerGradient(policyWeights1[i, j]);
+                double momentum = 0.9 * policyWeights1[i, j];
+                double update = currentLearningRate * (gradient + momentum);
+
+                // Update weight with gradient clipping
+                update = Math.Clamp(update, -1.0, 1.0);
+                policyWeights1[i, j] -= update;
+
+                // Store gradient for momentum
+                policyWeights1[i, j] = gradient;
+            }
+        }
+
+        // Update policy network layer 2
+        for (int i = 0; i < policyWeights2.GetLength(0); i++)
+        {
+            for (int j = 0; j < policyWeights2.GetLength(1); j++)
+            {
+                double gradient = loss * CalculateLayerGradient(policyWeights2[i, j]);
+                double momentum = 0.9 * policyWeights2[i, j];
+                double update = currentLearningRate * (gradient + momentum);
+                update = Math.Clamp(update, -1.0, 1.0);
+                policyWeights2[i, j] -= update;
+                policyWeights2[i, j] = gradient;
+            }
+        }
+
+        // Update policy network layer 3
+        for (int i = 0; i < policyWeights3.GetLength(0); i++)
+        {
+            for (int j = 0; j < policyWeights3.GetLength(1); j++)
+            {
+                double gradient = loss * CalculateLayerGradient(policyWeights3[i, j]);
+                double momentum = 0.9 * policyWeights3[i, j];
+                double update = currentLearningRate * (gradient + momentum);
+                update = Math.Clamp(update, -1.0, 1.0);
+                policyWeights3[i, j] -= update;
+                policyWeights3[i, j] = gradient;
+            }
+        }
+
+        // Update policy output weights
+        for (int i = 0; i < policyOutputWeights.Length; i++)
+        {
+            double gradient = loss * CalculateOutputGradient(policyOutputWeights[i]);
+            double momentum = 0.9 * policyOutputWeights[i];
+            double update = currentLearningRate * (gradient + momentum);
+            update = Math.Clamp(update, -1.0, 1.0);
+            policyOutputWeights[i] -= update;
+            policyOutputWeights[i] = gradient;
+        }
+    }
+
+    private void UpdateValueNetworkWeights(double loss)
+    {
+        // Similar structure to policy network updates but for value network
+        double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
+
+        // Update value network weights with similar pattern...
+        // (Implementation similar to policy network updates)
+
+        // Example for first layer:
+        for (int i = 0; i < valueWeights1.GetLength(0); i++)
+        {
+            for (int j = 0; j < valueWeights1.GetLength(1); j++)
+            {
+                double gradient = loss * CalculateLayerGradient(valueWeights1[i, j]);
+                double momentum = 0.9 * valueWeights1[i, j];
+                double update = currentLearningRate * (gradient + momentum);
+                update = Math.Clamp(update, -1.0, 1.0);
+                valueWeights1[i, j] -= update;
+                valueWeights1[i, j] = gradient;
+            }
+        }
+
+        // Continue with other layers...
+    }
+
+    private double CalculateLayerGradient(double weight)
+    {
+        // Add small noise for exploration
+        double noise = random.NextDouble() * 0.01;
+
+        // Calculate gradient with weight decay
+        double weightDecay = 0.0001 * weight;
+
+        return weight + noise + weightDecay;
+    }
+
+    private double CalculateOutputGradient(double weight)
+    {
+        // Similar to layer gradient but with different scaling
+        double noise = random.NextDouble() * 0.005;
+        double weightDecay = 0.0001 * weight;
+
+        return weight + noise + weightDecay;
+    }
     /// <summary>
     /// Updates both policy and value networks using collected trajectory data.
     /// </summary>
@@ -309,30 +617,48 @@ class PPO
     /// <param name="oldActionProbs">List of action probabilities from old policy</param>
     /// <param name="values">List of estimated state values</param>
     /// <param name="rewards">List of rewards received</param>
-    private void UpdateNetworks(List<double[]> states, List<int> actions, List<double> advantages,
-                              List<double> oldActionProbs, List<double> values, List<int> rewards)
+    private void UpdateNetworksBatch(TrajectoryData trajectory, List<int> batchIndices)
     {
-        for (int i = 0; i < states.Count; i++)
+        double policyLoss = 0;
+        double valueLoss = 0;
+        double entropy = 0;
+
+        foreach (int idx in batchIndices)
         {
-            var currentProbs = Policy(states[i]);
-            double ratio = currentProbs[actions[i]] / oldActionProbs[i];
+            var currentProbs = PolicyForward(trajectory.states[idx]);
+            double ratio = currentProbs[trajectory.actions[idx]] / trajectory.oldActionProbs[idx];
 
-            // Policy loss
-            double clippedRatio = Math.Clamp(ratio, 1 - ClipEpsilon, 1 + ClipEpsilon);
-            double policyLoss = -Math.Min(ratio * advantages[i], clippedRatio * advantages[i]);
-
-            // Add entropy bonus for exploration
-            double entropy = -currentProbs.Sum(p => p * Math.Log(Math.Max(p, 1e-10)));
-            policyLoss -= EntropyCoef * entropy;
+            // Policy loss with clipping
+            double advantage = trajectory.advantages[idx];
+            double unclippedLoss = ratio * advantage;
+            double clippedLoss = Math.Clamp(ratio, 1 - CLIP_EPSILON, 1 + CLIP_EPSILON) * advantage;
+            policyLoss += -Math.Min(unclippedLoss, clippedLoss);
 
             // Value loss
-            double returns = advantages[i] + values[i];
-            double valueLoss = Math.Pow(Value(states[i]) - returns, 2);
+            double returns = advantage + trajectory.values[idx];
+            double valueEstimate = ValueForward(trajectory.states[idx]);
+            valueLoss += Math.Pow(valueEstimate - returns, 2);
 
-            // Update weights using simple gradient descent
-            UpdatePolicyWeights(states[i], actions[i], policyLoss);
-            UpdateValueWeights(states[i], valueLoss);
+            // Entropy for exploration
+            entropy += -currentProbs.Sum(p => p * Math.Log(Math.Max(p, 1e-10)));
         }
+
+        // Average losses
+        int batchSize = batchIndices.Count;
+        policyLoss /= batchSize;
+        valueLoss /= batchSize;
+        entropy /= batchSize;
+
+        // Track metrics
+        //Console.WriteLine(policyLoss);
+        //Console.WriteLine(valueLoss);
+        policyLosses.Add(policyLoss);
+        valueLosses.Add(valueLoss);
+        entropyValues.Add(entropy);
+
+        // Apply updates
+        double totalLoss = policyLoss + VALUE_COEF * valueLoss - ENTROPY_COEF * entropy;
+        UpdateNetworkWeights(totalLoss);
     }
 
     /// <summary>
@@ -346,10 +672,10 @@ class PPO
         // Simple gradient descent update
         for (int i = 0; i < policyWeights1.GetLength(0); i++)
             for (int j = 0; j < policyWeights1.GetLength(1); j++)
-                policyWeights1[i, j] -= LearningRate * loss * state[i];
+                policyWeights1[i, j] -= LEARNING_RATE * loss * state[i];
 
         for (int i = 0; i < policyWeights2.Length; i++)
-            policyWeights2[i] -= LearningRate * loss;
+            policyOutputWeights[i] -= LEARNING_RATE * loss;
     }
 
     /// <summary>
@@ -361,10 +687,28 @@ class PPO
     {
         for (int i = 0; i < valueWeights1.GetLength(0); i++)
             for (int j = 0; j < valueWeights1.GetLength(1); j++)
-                valueWeights1[i, j] -= LearningRate * loss * state[i];
+                valueWeights1[i, j] -= LEARNING_RATE * loss * state[i];
 
         for (int i = 0; i < valueWeights2.Length; i++)
-            valueWeights2[i] -= LearningRate * loss;
+            valueOutputWeights[i] -= LEARNING_RATE * loss;
     }
 
+}
+
+class TrajectoryData
+{
+    public List<double[]> states = new List<double[]>();
+    public List<int> actions = new List<int>();
+    public List<double> oldActionProbs = new List<double>();
+    public List<double> values = new List<double>();
+    public List<double> rewards = new List<double>();
+    public List<double> advantages = new List<double>();
+
+    public void AddStep(double[] state, int action, double actionProb, double value)
+    {
+        states.Add(state);
+        actions.Add(action);
+        oldActionProbs.Add(actionProb);
+        values.Add(value);
+    }
 }

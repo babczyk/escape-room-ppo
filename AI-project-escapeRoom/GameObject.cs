@@ -126,7 +126,6 @@ public class GameObject
         // Resolve collision with the closest wall, if any
         if (closestWall != null)
         {
-            //System.Console.WriteLine(closestWall.ROLL + " " + ROLL + " " + IsGrounded);
             float overlapX = Math.Min(Position.X + Size.X - closestWall.Position.X, closestWall.Position.X + closestWall.Size.X - Position.X);
             float overlapY = Math.Min(Position.Y + Size.Y - closestWall.Position.Y, closestWall.Position.Y + closestWall.Size.Y - Position.Y);
 
