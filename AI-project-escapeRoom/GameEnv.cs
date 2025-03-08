@@ -59,6 +59,11 @@ class GameEnvironment
             reward += 3; // Encourage moving toward the box
             ////console.Write("+" + 3);
         }
+        else
+        {
+            reward -= 1; // Penalize moving away from the box
+            //console.Write("-" + 1);
+        }
 
         if (game.player.heldBox != null && game.IsMovingToward(game.button, game.lastPlayerPosition))
         {
@@ -68,7 +73,7 @@ class GameEnvironment
 
         if (game.box.Intersects(game.button) && !game.previousBoxState)
         {
-            reward += 100; // Reward for **placing** the box on the button
+            reward += 50; // Reward for **placing** the box on the button
             game.IsPressed = true;
             game.previousBoxState = true; // Prevent continuous reward abuse
             //console.Write("+" + 100);
@@ -86,12 +91,6 @@ class GameEnvironment
         {
             reward += 7;
             //console.Write("+" + 7);
-        }
-
-
-        if (game.IsExploringNewArea())
-        {
-            reward += 2;
         }
 
         // **Penalties**
@@ -113,14 +112,15 @@ class GameEnvironment
             ResetPlayerAndBox();
             //console.Write("-" + 20);
         }
+
         //moveing away from goal panalty
-        if (!game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null
-        || !game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed
+        if (!game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed
         || !game.IsMovingToward(game.box, game.lastPlayerPosition) && !game.IsPressed)
         {
             reward -= 15;
             //console.Write("-" + 15);
         }
+
         // Maximum steps penalty
         if (currentStep >= maxSteps)
         {
