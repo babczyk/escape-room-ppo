@@ -45,7 +45,7 @@ class GameEnvironment
         {
             case 0: game.player.Move(new Vector2(-10, 0)); break; // Move left
             case 1: game.player.Move(new Vector2(10, 0)); break;  // Move right
-            case 2: if (game.player.IsGrounded) game.player.ApplyForce(new Vector2(0, -250)); break; // Jump
+            case 2: if (game.player.IsGrounded) game.player.ApplyForce(new Vector2(0, -250)); game.player.IsGrounded = false; break; // Jump
             case 3: game.player.Grab(game.box); break; // Interact (e.g., pick up the box)
             case 4: game.player.DropHeldBox(); break; // Interact (e.g., drop the box)
         }
@@ -113,20 +113,10 @@ class GameEnvironment
             ResetPlayerAndBox();
             //console.Write("-" + 20);
         }
-        // Moving away from goal penalty
-        if (!game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null)
-        {
-            reward -= 15;
-            //console.Write("-" + 15);
-        }
-
-        if (!game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed)
-        {
-            reward -= 15;
-            //console.Write("-" + 15);
-        }
-
-        if (!game.IsMovingToward(game.box, game.lastPlayerPosition) && !game.IsPressed)
+        //moveing away from goal panalty
+        if (!game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null
+        || !game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed
+        || !game.IsMovingToward(game.box, game.lastPlayerPosition) && !game.IsPressed)
         {
             reward -= 15;
             //console.Write("-" + 15);
