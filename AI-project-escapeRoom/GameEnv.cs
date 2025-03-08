@@ -54,9 +54,9 @@ class GameEnvironment
         ///////////////////////////////
         //console.Write("Reward: " + reward);
         // Small continuous rewards for correct behaviors
-        if (game.IsMovingToward(game.box, game.lastPlayerPosition))
+        if (game.IsMovingToward(game.box, game.lastPlayerPosition) && !game.IsPressed)
         {
-            //reward += 3; // Encourage moving toward the box
+            reward += 3; // Encourage moving toward the box
             ////console.Write("+" + 3);
         }
 
@@ -74,7 +74,7 @@ class GameEnvironment
             //console.Write("+" + 100);
         }
 
-        if (game.previousBoxState && game.player.Intersects(game.door))
+        if (game.IsPressed && game.player.Intersects(game.door))
         {
             reward += 200; // Reward for completing the goal
             IsDone = true;
@@ -88,35 +88,45 @@ class GameEnvironment
             //console.Write("+" + 7);
         }
 
-        /* Exploration reward
+
         if (game.IsExploringNewArea())
         {
             reward += 2;
         }
-        */
+
         // **Penalties**
         if (!game.box.Intersects(game.button) && game.player.Intersects(game.door))
         {
             reward -= 20; // Lower penalty (was too harsh)
             //console.Write("-" + 20);
         }
-        /*
+
         if (game.IsIdle())
         {
-            reward -= 20; // Increased penalty for inactivity
+            reward -= 2; // Increased penalty for inactivity
         }
-        */
+
         // Out of bounds penalties
         if (IsOutOfBounds(game.player) || IsOutOfBounds(game.box))
         {
             reward -= 20;
             ResetPlayerAndBox();
-            IsDone = true;
             //console.Write("-" + 20);
         }
-        //moveing away from goal panalty
-        if (!game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null
-        || !game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed)
+        // Moving away from goal penalty
+        if (!game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null)
+        {
+            reward -= 15;
+            //console.Write("-" + 15);
+        }
+
+        if (!game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed)
+        {
+            reward -= 15;
+            //console.Write("-" + 15);
+        }
+
+        if (!game.IsMovingToward(game.box, game.lastPlayerPosition) && !game.IsPressed)
         {
             reward -= 15;
             //console.Write("-" + 15);
@@ -124,7 +134,7 @@ class GameEnvironment
         // Maximum steps penalty
         if (currentStep >= maxSteps)
         {
-            reward -= 150; // Lowered penalty to allow learning
+            reward -= 50; // Lowered penalty to allow learning
             ResetPlayerAndBox();
             IsDone = true;
             //console.Write("-" + 150);
@@ -132,7 +142,7 @@ class GameEnvironment
 
 
         //console.WriteLine("Total Reward: " + reward);
-        Thread.Sleep(1);
+        Thread.Sleep(5);
         return (GetState(), reward, IsDone);
     }
 

@@ -226,11 +226,12 @@ class PPO
         double averageReward = 0;
         int episodesSinceImprovement = 0;
         int episode = 0;
-        if (File.Exists(progressPath))
+        if (File.Exists(progressPath) && File.Exists(modelPath))
         {
             var progress = LoadProgress(progressPath);
             episode = progress.episode;
             bestReward = progress.bestReward;
+            LoadModel(modelPath);
         }
         for (; episode < episodes; episode++)
         {
@@ -252,7 +253,7 @@ class PPO
 
             // Track metrics
             episodeRewards.Add(totalReward);
-            averageReward = episodeRewards.TakeLast(50).Average(); //take an avrege of 50 episodes (50 generations)
+            averageReward = episodeRewards.TakeLast(5).Average(); //take an avrege of 50 episodes (50 generations)
             Console.WriteLine($"avrege reward {averageReward}:");
             // Log progress
             if (episode % 5 == 0)
