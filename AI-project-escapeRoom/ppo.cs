@@ -565,29 +565,75 @@ class PPO
         }
     }
 
+    /// <summary>
+    /// Updates the weights of the value network using gradient descent with momentum.
+    /// This function applies a learning rate decay and gradient clipping to stabilize training.
+    /// </summary>
+    /// <param name="loss">The loss value used to compute the gradient updates.</param>
     private void UpdateValueNetworkWeights(double loss)
     {
-        // Similar structure to policy network updates but for value network
+        // Compute the current learning rate with decay
         double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
 
-        // Update value network weights with similar pattern...
-        // (Implementation similar to policy network updates)
-
-        // Example for first layer:
+        // Update value network layer 1
         for (int i = 0; i < valueWeights1.GetLength(0); i++)
         {
             for (int j = 0; j < valueWeights1.GetLength(1); j++)
             {
+                // Compute the gradient and apply momentum
                 double gradient = loss * CalculateLayerGradient(valueWeights1[i, j]);
                 double momentum = 0.9 * valueWeights1[i, j];
                 double update = currentLearningRate * (gradient + momentum);
+
+                // Apply gradient clipping
                 update = Math.Clamp(update, -1.0, 1.0);
+
+                // Update weights
                 valueWeights1[i, j] -= update;
+
+                // Store gradient for future momentum updates
                 valueWeights1[i, j] = gradient;
             }
         }
 
-        // Continue with other layers...
+        // Update value network layer 2
+        for (int i = 0; i < valueWeights2.GetLength(0); i++)
+        {
+            for (int j = 0; j < valueWeights2.GetLength(1); j++)
+            {
+                double gradient = loss * CalculateLayerGradient(valueWeights2[i, j]);
+                double momentum = 0.9 * valueWeights2[i, j];
+                double update = currentLearningRate * (gradient + momentum);
+                update = Math.Clamp(update, -1.0, 1.0);
+                valueWeights2[i, j] -= update;
+                valueWeights2[i, j] = gradient;
+            }
+        }
+
+        // Update value network layer 3
+        for (int i = 0; i < valueWeights3.GetLength(0); i++)
+        {
+            for (int j = 0; j < valueWeights3.GetLength(1); j++)
+            {
+                double gradient = loss * CalculateLayerGradient(valueWeights3[i, j]);
+                double momentum = 0.9 * valueWeights3[i, j];
+                double update = currentLearningRate * (gradient + momentum);
+                update = Math.Clamp(update, -1.0, 1.0);
+                valueWeights3[i, j] -= update;
+                valueWeights3[i, j] = gradient;
+            }
+        }
+
+        // Update value output weights
+        for (int i = 0; i < valueOutputWeights.Length; i++)
+        {
+            double gradient = loss * CalculateOutputGradient(valueOutputWeights[i]);
+            double momentum = 0.9 * valueOutputWeights[i];
+            double update = currentLearningRate * (gradient + momentum);
+            update = Math.Clamp(update, -1.0, 1.0);
+            valueOutputWeights[i] -= update;
+            valueOutputWeights[i] = gradient;
+        }
     }
 
     private double CalculateLayerGradient(double weight)

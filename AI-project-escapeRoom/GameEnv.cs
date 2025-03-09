@@ -12,7 +12,7 @@ using System.Threading;
 class GameEnvironment
 {
     private Game1 game;
-    private int maxSteps = 5000;
+    private int maxSteps = 1000;
     private int currentStep;
     public GameEnvironment(Game1 game)
     {
@@ -53,59 +53,59 @@ class GameEnvironment
         // Rewards for key objectives//
         ///////////////////////////////
         //console.Write("Reward: " + reward);
-        // Small continuous rewards for correct behaviors
-        if (game.IsMovingToward(game.box, game.lastPlayerPosition) && !game.IsPressed)
+
+        // Step 1: Reward for moving toward the box
+        if (game.IsMovingToward(game.box, game.lastPlayerPosition) && !game.IsPressed
+        && game.player.heldBox == null) // Only reward if the box is not held
         {
             reward += 3; // Encourage moving toward the box
             ////console.Write("+" + 3);
         }
-        else
-        {
-            reward -= 1; // Penalize moving away from the box
-            //console.Write("-" + 1);
-        }
 
-        if (game.player.heldBox != null && game.IsMovingToward(game.button, game.lastPlayerPosition))
+        // Step 2: Reward for moving toward the button while holding the box
+        if (game.player.heldBox != null && game.IsMovingToward(game.button, game.lastPlayerPosition)
+        && !game.IsPressed) // Only reward if the box is held and button is not pressed
         {
             reward += 10; // Encourage moving toward button while holding the box
             //console.Write("+" + 10);
         }
 
-        if (game.box.Intersects(game.button) && !game.previousBoxState)
+        // Step 3: Reward for placing the box on the button
+        if (game.box.Intersects(game.button) && !game.previousBoxState
+        && game.player.heldBox == null) // Only reward if the box is not held
         {
-            reward += 50; // Reward for **placing** the box on the button
+            reward += 50; // Reward for placing the box on the button
             game.IsPressed = true;
             game.previousBoxState = true; // Prevent continuous reward abuse
             //console.Write("+" + 100);
         }
 
-        if (game.IsPressed && game.player.Intersects(game.door))
-        {
-            reward += 200; // Reward for completing the goal
-            IsDone = true;
-            //console.Write("+" + 200);
-        }
 
-        // Slight reward for progress toward the door **only** if button is pressed
+        // Step 4: Reward for progress toward the door only if button is pressed
         if (game.IsPressed && game.IsMovingToward(game.door, game.lastPlayerPosition))
         {
             reward += 7;
             //console.Write("+" + 7);
         }
 
-        // **Penalties**
+        ///////////////////////////////
+        // Penalties for incorrect behaviors//
+        ///////////////////////////////
+
+        // Penalty for reaching the door without pressing the button
         if (!game.box.Intersects(game.button) && game.player.Intersects(game.door))
         {
             reward -= 20; // Lower penalty (was too harsh)
             //console.Write("-" + 20);
         }
 
+        // Penalty for inactivity
         if (game.IsIdle())
         {
             reward -= 2; // Increased penalty for inactivity
         }
 
-        // Out of bounds penalties
+        // Penalty for going out of bounds
         if (IsOutOfBounds(game.player) || IsOutOfBounds(game.box))
         {
             reward -= 20;
@@ -113,9 +113,9 @@ class GameEnvironment
             //console.Write("-" + 20);
         }
 
-        //moveing away from goal panalty
-        if (!game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed
-        || !game.IsMovingToward(game.box, game.lastPlayerPosition) && !game.IsPressed)
+        // Penalty for moving away from the goal
+        if ((!game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed) ||
+            (!game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null))
         {
             reward -= 15;
             //console.Write("-" + 15);
@@ -132,7 +132,7 @@ class GameEnvironment
 
 
         //console.WriteLine("Total Reward: " + reward);
-        Thread.Sleep(5);
+        Thread.Sleep(1);
         return (GetState(), reward, IsDone);
     }
 
