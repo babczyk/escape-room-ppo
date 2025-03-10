@@ -60,20 +60,17 @@ class GameEnvironment
             reward += 20; // Reward for picking up the box
             Console.WriteLine("Picked up the box. Reward: +20");
         }
-        /*
-        // Reward for moving toward the box // 
-        if (game.IsMovingToward(game.box, game.lastPlayerPosition) && !game.IsPressed
-        && game.player.heldBox == null) // Only reward if the box is not held
+        //reward for the box geting closer to button
+        if (game.player.heldBox != null && game.IsMovingToward(game.button, game.lastPlayerPosition))
         {
-            reward += 7; // Encourage moving toward the box
-            Console.WriteLine("Moving toward the box. Reward: +7");
+            reward += 10; // Encourage moving toward button while holding the box
+            Console.WriteLine("Moving toward the button with the box. Reward: +10");
         }
-        else if (!game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null)
+        else if (game.player.heldBox != null && !game.IsMovingToward(game.button, game.lastPlayerPosition))
         {
-            reward -= 5; // Small penalty for moving away from the box
-            Console.WriteLine("Moving away from the box. Penalty: -5");
+            reward -= 5; // Small penalty for moving away from the button
+            Console.WriteLine("Moving away from the button with the box. Penalty: -5");
         }
-        */
         // Reward for moving toward the button while holding the box
         if (game.player.heldBox != null && game.IsMovingToward(game.button, game.lastPlayerPosition))
         {
