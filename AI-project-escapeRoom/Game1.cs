@@ -349,6 +349,9 @@ namespace AI_project_escapeRoom
             _spriteBatch.DrawString(font, title, textPosition, Color.Red);
             _spriteBatch.DrawString(font, "Epesode:  " + ppo.curentEpeisode, new Vector2(10, 30), Color.Red);
             _spriteBatch.DrawString(font, "Rewards:  " + ppo.episodeRewards.Sum().ToString(), new Vector2(10, 50), Color.Red);
+            _spriteBatch.DrawString(font, "Policy loss:  " + ppo.policyLossesfordispaly.ToString("F3"), new Vector2(10, 70), Color.Red);
+            _spriteBatch.DrawString(font, "value loss:  " + ppo.Value_Loss.ToString("F3"), new Vector2(10, 90), Color.Red);
+            _spriteBatch.DrawString(font, "Entropy:  " + ppo.Entropy.ToString("F3"), new Vector2(10, 110), Color.Red);
             base.Draw(gameTime);
             _spriteBatch.End();
         }

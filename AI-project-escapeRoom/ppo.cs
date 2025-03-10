@@ -11,6 +11,9 @@ class PPO
 {
     private static Random rng = new Random();
     public int curentEpeisode = 0;
+    public double policyLossesfordispaly = 0;
+    public double Value_Loss = 0;
+    public double Entropy = 0;
 
     // Neural network architecture
     private const int HIDDEN_LAYER_1_SIZE = 128;
@@ -337,9 +340,9 @@ class PPO
                 Console.WriteLine($"Episode {episode}:");
                 Console.WriteLine($"Total Reward: {totalReward:F2}");
                 Console.WriteLine($"Average Reward: {averageReward:F2}");
-                Console.WriteLine($"Policy Loss: {policyLosses.LastOrDefault():F4}");
-                Console.WriteLine($"Value Loss: {valueLosses.LastOrDefault():F4}");
-                Console.WriteLine($"Entropy: {entropyValues.LastOrDefault():F4}");
+                policyLossesfordispaly = policyLosses.LastOrDefault();
+                Value_Loss = valueLosses.LastOrDefault();
+                Entropy = entropyValues.LastOrDefault();
                 Console.WriteLine("--------------------");
                 SaveProgress(progressPath, episode, bestReward, episodeRewards);
             }
