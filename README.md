@@ -1,7 +1,3 @@
-Here's an updated README for your **Proximity Policy Optimization (PPO)** escape room solver project written in **C#** using **VS Code** and **MonoGame**:
-
----
-
 # Proximity Policy Optimization (PPO) Escape Room Solver
 
 This project demonstrates the use of **Proximity Policy Optimization (PPO)**, a reinforcement learning algorithm, to solve an escape room simulation. The agent navigates a room with a **pickable box**, a **button** that opens a door, and **walls**. This implementation is written in **C#** using **MonoGame** for the environment simulation and the PPO algorithm to train the agent.
@@ -106,6 +102,3 @@ Performance is measured by the number of episodes the agent needs to complete th
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
----
-
-Feel free to modify the README as necessary for your project! Let me know if you'd like any more changes or additions.
