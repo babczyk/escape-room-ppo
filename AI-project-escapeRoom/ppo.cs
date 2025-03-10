@@ -14,6 +14,7 @@ class PPO
     public double policyLossesfordispaly = 0;
     public double Value_Loss = 0;
     public double Entropy = 0;
+    public double totalRewardInEpisode = 0;
 
     // Neural network architecture
     private const int HIDDEN_LAYER_1_SIZE = 128;
@@ -332,6 +333,7 @@ class PPO
 
             // Track metrics
             episodeRewards.Add(totalReward);
+            totalRewardInEpisode = totalReward;
             averageReward = episodeRewards.TakeLast(5).Average(); //take an avrege of 50 episodes (50 generations)
             //Conosle.WriteLine($"avrege reward {averageReward}:");
             // Log progress
