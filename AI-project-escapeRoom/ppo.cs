@@ -10,6 +10,7 @@ using Microsoft.Xna.Framework;
 class PPO
 {
     private static Random rng = new Random();
+    public int curentEpeisode = 0;
 
     // Neural network architecture
     private const int HIDDEN_LAYER_1_SIZE = 128;
@@ -48,7 +49,7 @@ class PPO
     private const int BATCH_SIZE = 64;
 
     // Training metrics
-    private List<double> episodeRewards;
+    public List<double> episodeRewards;
     private List<double> policyLosses;
     private List<double> valueLosses;
     private List<double> entropyValues;
@@ -309,6 +310,7 @@ class PPO
         }
         for (; episode < episodes; episode++)
         {
+            curentEpeisode = episode;
             var (trajectory, totalReward) = CollectTrajectory(env);
 
             // Update networks multiple times with the collected data

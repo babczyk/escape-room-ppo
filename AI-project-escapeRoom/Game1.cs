@@ -123,21 +123,21 @@ namespace AI_project_escapeRoom
         // New Function: IsMovingToward
         public bool IsMovingToward(GameObject target, Vector2 previousPlayerPosition)
         {
-            // Calculate the direction from the player's previous position to the target
+            // Get the direction vectors
             Vector2 directionToTarget = target.Position - previousPlayerPosition;
-
-            // Calculate the direction of the player's movement (current position - previous position)
             Vector2 movementDirection = player.Position - previousPlayerPosition;
 
-            // Normalize both vectors
-            Vector2 normalizedDirectionToTarget = Vector2.Normalize(directionToTarget);
-            Vector2 normalizedMovementDirection = Vector2.Normalize(movementDirection);
-            // Calculate the dot product
-            float dotProduct = Vector2.Dot(normalizedDirectionToTarget, normalizedMovementDirection);
-            // If the dot product is close to 1, the player is moving toward the target
-            // Use a threshold to account for precision errors
-            return dotProduct > 0.9f;
+            // Early exit if no movement
+            if (movementDirection.LengthSquared() < 0.0001f) return false;
+
+            // Avoid normalization when not needed
+            float dotProduct = Vector2.Dot(directionToTarget, movementDirection) /
+                            (directionToTarget.Length() * movementDirection.Length());
+
+            // Ensure the dot product is meaningful
+            return dotProduct > 0.95f; // Slightly more strict
         }
+
 
         private void StartTraining()
         {
@@ -327,7 +327,7 @@ namespace AI_project_escapeRoom
 
         protected override void Draw(GameTime gameTime)
         {
-            GraphicsDevice.Clear(Color.CornflowerBlue);
+            GraphicsDevice.Clear(Color.DarkBlue);
 
             _spriteBatch.Begin(transformMatrix: Matrix.CreateTranslation(-cameraPosition.X, -cameraPosition.Y, 0));
 
@@ -341,9 +341,16 @@ namespace AI_project_escapeRoom
             door.Draw(_spriteBatch);
             cieling.Draw(_spriteBatch);
 
-            _spriteBatch.End();
 
+            // Draw text at the upper corner of the screen
+            SpriteFont font = Content.Load<SpriteFont>("File");
+            string title = "Escape Room AI";
+            Vector2 textPosition = new Vector2(10, 10);
+            _spriteBatch.DrawString(font, title, textPosition, Color.Red);
+            _spriteBatch.DrawString(font, "Epesode:  " + ppo.curentEpeisode, new Vector2(10, 30), Color.Red);
+            _spriteBatch.DrawString(font, "Rewards:  " + ppo.episodeRewards.Sum().ToString(), new Vector2(10, 50), Color.Red);
             base.Draw(gameTime);
+            _spriteBatch.End();
         }
 
         protected override void UnloadContent()
