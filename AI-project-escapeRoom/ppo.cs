@@ -41,7 +41,7 @@ class PPO
     // Hyperparameters
     private const double GAMMA = 0.99f;
     private const double CLIP_EPSILON = 0.2f;
-    private const double LEARNING_RATE = 0.0003f;
+    private const double LEARNING_RATE = 0.0001f;
     private const int EPOCHS = 4;
     private double ENTROPY_COEF = 0.01f; // Made non-constant to allow decay
     private const double VALUE_COEF = 0.5f;
@@ -202,6 +202,10 @@ class PPO
             output[i] *= RandomGaussian(1, 0.1); ;   // Adjust scaling factor if needed
         }
         var outputReturn = Softmax(output);
+        if (outputReturn.Contains(Double.NaN) || outputReturn.Contains(Double.PositiveInfinity))
+        {
+            Console.WriteLine("Logits or Softmax output contains NaN or Inf");
+        }
         return Softmax(outputReturn);
     }
 
@@ -768,6 +772,10 @@ class PPO
             double valueEstimate = ValueForward(trajectory.states[idx]);
             valueLoss += Math.Pow(valueEstimate - returns, 2);
 
+            if (policyLoss > 1e10 || valueLoss > 1e10)
+            {
+                Console.WriteLine("Loss too large, check gradients!");
+            }
             // Calculate entropy for this distribution
             // Correct entropy calculation
             double Entropy = -currentProbs.Sum(p => p * Math.Log(Math.Max(p, 1e-6)));
@@ -782,7 +790,7 @@ class PPO
         double entropy = entropySum / batchSize;
 
         // Dynamic entropy coefficient - decay over time but maintain minimum exploration
-        ENTROPY_COEF = Math.Max(0.001, 0.01 * (1.0 - episodeRewards.Count * 0.0001));
+        ENTROPY_COEF = Math.Max(0.001, 0.001 * (1.0 - episodeRewards.Count * 0.00005));
 
         // Track metrics
         policyLosses.Add(policyLoss);

@@ -95,23 +95,21 @@ class GameEnvironment
         // Penalty for reaching the door without pressing the button
         if (!game.box.Intersects(game.button) && game.player.Intersects(game.door))
         {
-            reward -= 20; // Lower penalty (was too harsh)
+            reward -= 10; // Lower penalty (was too harsh)
             //console.Write("-" + 20);
-        }
-
-        // Penalty for inactivity
-        if (game.IsIdle())
-        {
-            reward -= 1; // Increased penalty for inactivity
         }
 
         // Penalty for going out of bounds
         if (IsOutOfBounds(game.player) || IsOutOfBounds(game.box))
         {
-            reward -= 10;
-            ResetPlayerAndBox();
-            //console.Write("-" + 20);
+            if (game.IsPressed && IsOutOfBounds(game.player))
+            {
+                reward += 100;
+                IsDone = true;
+            }
+            else { ResetPlayerAndBox(); }
         }
+
 
         // Maximum steps penalty
         if (currentStep >= maxSteps)
@@ -119,11 +117,12 @@ class GameEnvironment
             reward -= 30; // Lowered penalty to allow learning
             ResetPlayerAndBox();
             IsDone = true;
+            currentStep = 0;
             //console.Write("-" + 50);
         }
 
         //console.WriteLine("Total Reward: " + reward);
-        Thread.Sleep(1);
+        Thread.Sleep(5);
         return (GetState(), reward, IsDone);
     }
 
@@ -138,7 +137,6 @@ class GameEnvironment
     {
         ResetPlayerPosition();
         ResetBoxPosition();
-        currentStep = 0;
     }
 
     private void ResetPlayerPosition()
