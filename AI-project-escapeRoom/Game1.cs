@@ -163,6 +163,7 @@ namespace AI_project_escapeRoom
             catch (OperationCanceledException)
             {
                 // Training was cancelled
+                Console.WriteLine("Training cenceled.");
                 isTraining = false;
             }
         }

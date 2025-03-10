@@ -146,15 +146,16 @@ class GameEnvironment
 
     public bool RepeatingActions(List<int> actions)
     {
-        //find if exist any where in the array a 1000 action copy of the fist elements in array 
-        for (int i = 0; i < actions.Count - 1000; i++)
+        int length = 100;
+        if (actions.Count < length * 2)
         {
-            if (actions.GetRange(i, 1000).SequenceEqual(actions.GetRange(0, 1000)))
-            {
-                return true;
-            }
+            return false;
         }
-        return false;
+
+        var lastActions = actions.GetRange(actions.Count - length, length);
+        var previousActions = actions.GetRange(actions.Count - length * 2, length);
+
+        return lastActions.SequenceEqual(previousActions);
     }
     // Helper methods
     private bool IsOutOfBounds(GameObject obj)
