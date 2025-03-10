@@ -296,7 +296,6 @@ namespace AI_project_escapeRoom
             }
         }
 
-        // Your existing methods remain the same
         private void HandleCameraMovement()
         {
             // Check if the player is out of the screen bounds

@@ -8,16 +8,20 @@ using System.Diagnostics;
 using System;
 using System.IO;
 using System.Threading;
+using System.Collections.Generic;
 
 class GameEnvironment
 {
     private Game1 game;
     private int maxSteps = 5000;
     private int currentStep;
+    public List<int> lastPlayerMove;
+
     public GameEnvironment(Game1 game)
     {
         this.game = game;
         this.currentStep = 0;
+        this.lastPlayerMove = new List<int>();
     }
 
     public double[] GetState()
@@ -34,10 +38,10 @@ class GameEnvironment
         };
     }
 
-    public (double[], int, bool) Step(int action)
+    public (double[], double, bool) Step(int action)
     {
         currentStep++;
-        int reward = 0;
+        double reward = 0;
         bool IsDone = false;
 
         // Apply action
@@ -50,93 +54,71 @@ class GameEnvironment
             case 4: game.player.DropHeldBox(); break; // Interact (e.g., drop the box)
         }
 
+        lastPlayerMove.Add(action);
         ///////////////////////////////
         // Rewards for key objectives//
         ///////////////////////////////
 
-        // Reward for picking up the box
-        if (game.player.heldBox != null && game.player.heldBox == game.box && !game.previousBoxState)
+        //pick the box
+        if (game.player.Intersects(game.box) && game.player.heldBox == null)
         {
-            reward += 20; // Reward for picking up the box
-            Console.WriteLine("Picked up the box. Reward: +20");
-        }
-        //reward for the box geting closer to button
-        if (game.player.heldBox != null && game.IsMovingToward(game.button, game.lastPlayerPosition))
-        {
-            reward += 10; // Encourage moving toward button while holding the box
-            Console.WriteLine("Moving toward the button with the box. Reward: +10");
-        }
-        else if (game.player.heldBox != null && !game.IsMovingToward(game.button, game.lastPlayerPosition))
-        {
-            reward -= 5; // Small penalty for moving away from the button
-            Console.WriteLine("Moving away from the button with the box. Penalty: -5");
-        }
-        // Reward for moving toward the button while holding the box
-        if (game.player.heldBox != null && game.IsMovingToward(game.button, game.lastPlayerPosition))
-        {
-            reward += 20; // Encourage moving toward button while holding the box
-            Console.WriteLine("Moving toward the button with the box. Reward: +20");
-        }
-        else if (game.player.heldBox != null && !game.IsMovingToward(game.button, game.lastPlayerPosition))
-        {
-            reward -= 5; // Small penalty for moving away from the button
-            Console.WriteLine("Moving away from the button with the box. Penalty: -5");
+            reward += 1; // Reward for picking up the box
+            Console.WriteLine("Picked up the box. Reward: +10");
         }
 
-        // Reward for placing the box on the button
-        if (game.box.Intersects(game.button) && !game.previousBoxState)
+        //placing the box on the button
+        if (game.box.Intersects(game.button) && game.player.heldBox == null)
         {
-            reward += 100; // Large reward for placing the box on the button
-            game.IsPressed = true;
-            game.previousBoxState = true;
-            Console.WriteLine("Placed the box on the button. Reward: +100");
+            reward += 10; // Reward for placing the box on the button
+            Console.WriteLine("Placed the box on the button. Reward: +10");
         }
 
-        // Reward for moving toward the door after pressing the button
-        if (game.IsPressed && game.IsMovingToward(game.door, game.lastPlayerPosition))
+        //exiting the room finish goal
+        if (game.IsPressed && IsOutOfBounds(game.player))
         {
-            reward += 10;
-            Console.WriteLine("Moving toward the door after pressing the button. Reward: +10");
-        }
-        else if (game.IsPressed && !game.IsMovingToward(game.door, game.lastPlayerPosition))
-        {
-            reward -= 5;
-            Console.WriteLine("Moving away from the door after pressing the button. Penalty: -5");
-        }
-
-        // Reward for reaching the door after pressing the button
-        if (game.IsPressed && game.player.Intersects(game.door))
-        {
-            reward += 200; // Large reward for reaching the door after pressing the button
+            reward += 100; // Reward for escaping the room
             IsDone = true;
-            Console.WriteLine("Reached the door after pressing the button. Reward: +200");
+            Console.WriteLine("Escaped the room. Reward: +100");
         }
 
         ///////////////////////////////
         // Penalties for incorrect behaviors//
         ///////////////////////////////
 
-        // Penalty for reaching the door without pressing the button
-        if (!game.box.Intersects(game.button) && game.player.Intersects(game.door))
+        //droping the box for no resone
+        if (game.player.heldBox == null && game.previousBoxState == true
+        && !game.box.Intersects(game.button))
         {
-            reward -= 20; // Penalty for reaching the door without pressing the button
-            Console.WriteLine("Reached the door without pressing the button. Penalty: -20");
+            reward -= 1; // Penalty for dropping the box for no reason
+            Console.WriteLine("Dropped the box for no reason. Penalty: -1");
+        }
+
+        //culiding with the walls (not the ground)
+        if (!game.player.IsGrounded && game.player.Intersects(game.wall))
+        {
+            reward -= 1; // Penalty for colliding with the walls
+            Console.WriteLine("Collided with the walls. Penalty: -1");
+        }
+
+        //repeating actions
+        if (RepeatingActions(lastPlayerMove))
+        {
+            reward -= 1; // Penalty for repeating the same action
+            Console.WriteLine("Repeated the same action. Penalty: -1");
+        }
+
+        //time penalty
+        if (currentStep % 100 == 0)
+        {
+            reward -= 1; // Penalty for taking too long
+            Console.WriteLine("Taking too long. Penalty: -1");
         }
 
         // Reset if out of bounds
         if (IsOutOfBounds(game.player) || IsOutOfBounds(game.box))
         {
-            if (game.box.Intersects(game.button) && IsOutOfBounds(game.player))
-            {
-                reward += 100; // Reward for escaping the room
-                IsDone = true;
-                Console.WriteLine("Escaped the room. Reward: +100");
-            }
-            else
-            {
-                ResetPlayerAndBox();
-                Console.WriteLine("Out of bounds. Resetting player and box.");
-            }
+            ResetPlayerAndBox();
+            Console.WriteLine("Out of bounds. Resetting player and box.");
         }
 
         // Maximum steps penalty
@@ -153,7 +135,18 @@ class GameEnvironment
         return (GetState(), reward, IsDone);
     }
 
-
+    public bool RepeatingActions(List<int> actions)
+    {
+        //find if exist any where in the array a 1000 action copy of the fist elements in array 
+        for (int i = 0; i < actions.Count - 1000; i++)
+        {
+            if (actions.GetRange(i, 1000).SequenceEqual(actions.GetRange(0, 1000)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
     // Helper methods
     private bool IsOutOfBounds(GameObject obj)
     {
