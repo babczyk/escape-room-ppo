@@ -14,6 +14,7 @@ class PPO
     public double policyLossesfordispaly = 0;
     public double Value_Loss = 0;
     public double Entropy = 0;
+    public double totalRewardInEpisode = 0;
 
     // Neural network architecture
     private const int HIDDEN_LAYER_1_SIZE = 128;
@@ -332,18 +333,19 @@ class PPO
 
             // Track metrics
             episodeRewards.Add(totalReward);
+            totalRewardInEpisode = totalReward;
             averageReward = episodeRewards.TakeLast(5).Average(); //take an avrege of 50 episodes (50 generations)
-            Console.WriteLine($"avrege reward {averageReward}:");
+            //Conosle.WriteLine($"avrege reward {averageReward}:");
             // Log progress
             if (episode % 5 == 0)
             {
-                Console.WriteLine($"Episode {episode}:");
-                Console.WriteLine($"Total Reward: {totalReward:F2}");
-                Console.WriteLine($"Average Reward: {averageReward:F2}");
+                //Conosle.WriteLine($"Episode {episode}:");
+                //Conosle.WriteLine($"Total Reward: {totalReward:F2}");
+                //Conosle.WriteLine($"Average Reward: {averageReward:F2}");
                 policyLossesfordispaly = policyLosses.LastOrDefault();
                 Value_Loss = valueLosses.LastOrDefault();
                 Entropy = entropyValues.LastOrDefault();
-                Console.WriteLine("--------------------");
+                //Conosle.WriteLine("--------------------");
                 SaveProgress(progressPath, episode, bestReward, episodeRewards);
             }
 
