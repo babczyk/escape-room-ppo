@@ -199,7 +199,7 @@ class PPO
         // Scale logits before Softmax to avoid uniform distributions
         for (int i = 0; i < output.Length; i++)
         {
-            output[i] *= RandomGaussian(1, 0.1); ;   // Adjust scaling factor if needed
+            output[i] *= 10 * RandomGaussian(0, 0.01); ;   // Adjust scaling factor if needed
         }
         var outputReturn = Softmax(output);
         if (outputReturn.Contains(Double.NaN) || outputReturn.Contains(Double.PositiveInfinity))
