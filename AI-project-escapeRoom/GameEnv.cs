@@ -12,7 +12,7 @@ using System.Threading;
 class GameEnvironment
 {
     private Game1 game;
-    private int maxSteps = 1000;
+    private int maxSteps = 5000;
     private int currentStep;
     public GameEnvironment(Game1 game)
     {
@@ -58,9 +58,9 @@ class GameEnvironment
         if (game.IsMovingToward(game.box, game.lastPlayerPosition) && !game.IsPressed
         && game.player.heldBox == null) // Only reward if the box is not held
         {
-            reward += 3; // Encourage moving toward the box
-            ////console.Write("+" + 3);
+            reward += 7; // Encourage moving toward the box
         }
+
 
         // Step 2: Reward for moving toward the button while holding the box
         if (game.player.heldBox != null && game.IsMovingToward(game.button, game.lastPlayerPosition)
@@ -70,6 +70,7 @@ class GameEnvironment
             //console.Write("+" + 10);
         }
 
+
         // Step 3: Reward for placing the box on the button
         if (game.box.Intersects(game.button) && !game.previousBoxState
         && game.player.heldBox == null) // Only reward if the box is not held
@@ -77,21 +78,20 @@ class GameEnvironment
             reward += 50; // Reward for placing the box on the button
             game.IsPressed = true;
             game.previousBoxState = true; // Prevent continuous reward abuse
-            //console.Write("+" + 100);
+            //console.Write("+" + 50);
         }
-
 
         // Step 4: Reward for progress toward the door only if button is pressed
         if (game.IsPressed && game.IsMovingToward(game.door, game.lastPlayerPosition))
         {
-            reward += 7;
-            //console.Write("+" + 7);
+            reward += 10;
+            //console.Write("+" + 10);
         }
+
 
         ///////////////////////////////
         // Penalties for incorrect behaviors//
         ///////////////////////////////
-
         // Penalty for reaching the door without pressing the button
         if (!game.box.Intersects(game.button) && game.player.Intersects(game.door))
         {
@@ -102,34 +102,25 @@ class GameEnvironment
         // Penalty for inactivity
         if (game.IsIdle())
         {
-            reward -= 2; // Increased penalty for inactivity
+            reward -= 1; // Increased penalty for inactivity
         }
 
         // Penalty for going out of bounds
         if (IsOutOfBounds(game.player) || IsOutOfBounds(game.box))
         {
-            reward -= 20;
+            reward -= 10;
             ResetPlayerAndBox();
             //console.Write("-" + 20);
-        }
-
-        // Penalty for moving away from the goal
-        if ((!game.IsMovingToward(game.door, game.lastPlayerPosition) && game.IsPressed) ||
-            (!game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null))
-        {
-            reward -= 15;
-            //console.Write("-" + 15);
         }
 
         // Maximum steps penalty
         if (currentStep >= maxSteps)
         {
-            reward -= 50; // Lowered penalty to allow learning
+            reward -= 30; // Lowered penalty to allow learning
             ResetPlayerAndBox();
             IsDone = true;
-            //console.Write("-" + 150);
+            //console.Write("-" + 50);
         }
-
 
         //console.WriteLine("Total Reward: " + reward);
         Thread.Sleep(1);

@@ -9,6 +9,8 @@ using Microsoft.Xna.Framework;
 
 class PPO
 {
+    private static Random rng = new Random();
+
     // Neural network architecture
     private const int HIDDEN_LAYER_1_SIZE = 128;
     private const int HIDDEN_LAYER_2_SIZE = 64;
@@ -25,12 +27,23 @@ class PPO
     private double[,] valueWeights3;
     private double[] valueOutputWeights;
 
+    // Weight gradients and momentum for proper updates
+    private double[,] policyGradients1;
+    private double[,] policyGradients2;
+    private double[,] policyGradients3;
+    private double[] policyOutputGradients;
+
+    private double[,] valueGradients1;
+    private double[,] valueGradients2;
+    private double[,] valueGradients3;
+    private double[] valueOutputGradients;
+
     // Hyperparameters
     private const double GAMMA = 0.99f;
     private const double CLIP_EPSILON = 0.2f;
     private const double LEARNING_RATE = 0.0003f;
     private const int EPOCHS = 4;
-    private const double ENTROPY_COEF = 0.01f;
+    private double ENTROPY_COEF = 0.01f; // Made non-constant to allow decay
     private const double VALUE_COEF = 0.5f;
     private const int BATCH_SIZE = 64;
 
@@ -39,6 +52,11 @@ class PPO
     private List<double> policyLosses;
     private List<double> valueLosses;
     private List<double> entropyValues;
+
+    // BatchNorm running statistics
+    private double[] runningMean;
+    private double[] runningVar;
+    private const double MOMENTUM = 0.99;
 
     private Random random;
     private int stateSize;
@@ -66,6 +84,25 @@ class PPO
         valueWeights2 = InitializeWeights(HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE);
         valueWeights3 = InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
         valueOutputWeights = InitializeWeights(HIDDEN_LAYER_3_SIZE, 1).Cast<double>().ToArray();
+
+        // Initialize gradients and momentum
+        policyGradients1 = new double[stateSize, HIDDEN_LAYER_1_SIZE];
+        policyGradients2 = new double[HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE];
+        policyGradients3 = new double[HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE];
+        policyOutputGradients = new double[HIDDEN_LAYER_3_SIZE];
+
+        valueGradients1 = new double[stateSize, HIDDEN_LAYER_1_SIZE];
+        valueGradients2 = new double[HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE];
+        valueGradients3 = new double[HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE];
+        valueOutputGradients = new double[HIDDEN_LAYER_3_SIZE];
+
+        // Initialize BatchNorm statistics
+        runningMean = new double[stateSize];
+        runningVar = new double[stateSize];
+        for (int i = 0; i < stateSize; i++)
+        {
+            runningVar[i] = 1.0;
+        }
 
         // Initialize metrics
         episodeRewards = new List<double>();
@@ -122,9 +159,9 @@ class PPO
     /// </summary>
     /// <param name="x">Input vector</param>
     /// <returns>Vector with ReLU activation applied</returns>
-    private double[] ReLU(double[] x)
+    private double[] ReLU(double[] x, double alpha = 0.01)
     {
-        return x.Select(v => Math.Max(0, v)).ToArray();
+        return x.Select(v => v >= 0 ? v : alpha * v).ToArray();
     }
 
     /// <summary>
@@ -132,14 +169,50 @@ class PPO
     /// </summary>
     /// <param name="x">Input logits</param>
     /// <returns>Probability distribution that sums to 1</returns>
-    private double[] Softmax(double[] x)
+    private double[] Softmax(double[] logits)
     {
-        double max = x.Max();
-        double[] exp = x.Select(v => Math.Exp(v - max)).ToArray();
-        double sum = exp.Sum();
-        return exp.Select(v => v / sum).ToArray();
+        // Normalize logits to avoid numerical instability
+        double mean = logits.Average();
+        double std = Math.Sqrt(logits.Select(l => Math.Pow(l - mean, 2)).Average());
+
+        // Normalize to have zero mean and unit variance (if std > 0)
+        double[] normalizedLogits = std > 0 ? logits.Select(l => (l - mean) / std).ToArray() : logits;
+
+        double maxLogit = normalizedLogits.Max();
+        double[] expValues = normalizedLogits.Select(l => Math.Exp(l - maxLogit)).ToArray();
+        double sumExp = expValues.Sum();
+        return expValues.Select(e => e / sumExp).ToArray();
     }
 
+    private double[] PolicyForward(double[] input)
+    {
+        var layer1 = ReLU(LinearLayer(input, policyWeights1));
+        var layer2 = ReLU(LinearLayer(layer1, policyWeights2));
+
+        // BatchNorm to stabilize training
+        layer2 = BatchNorm(layer2);
+
+        var layer3 = ReLU(LinearLayer(layer2, policyWeights3));
+        var output = LinearLayer(layer3, new double[HIDDEN_LAYER_3_SIZE, actionSize], policyOutputWeights);
+        //Console.WriteLine($"Logits: {string.Join(", ", output)}");
+
+        // Scale logits before Softmax to avoid uniform distributions
+        for (int i = 0; i < output.Length; i++)
+        {
+            output[i] *= RandomGaussian(1, 0.1); ;   // Adjust scaling factor if needed
+        }
+        var outputReturn = Softmax(output);
+        return Softmax(outputReturn);
+    }
+
+    public static double RandomGaussian(double mean = 0.0, double stdDev = 1.0)
+    {
+        double u1 = 1.0 - rng.NextDouble(); // Uniform(0,1] random value
+        double u2 = 1.0 - rng.NextDouble();
+
+        double randStdNormal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
+        return mean + stdDev * randStdNormal; // Scale to desired mean/stdDev
+    }
     /// <summary>
     /// Computes advantages using Generalized Advantage Estimation (GAE).
     /// </summary>
@@ -170,13 +243,11 @@ class PPO
         return advantages;
     }
 
-    private double[] PolicyForward(double[] input)
+    private double[] BatchNorm(double[] input, double epsilon = 1e-5)
     {
-        var layer1 = ReLU(LinearLayer(input, policyWeights1));
-        var layer2 = ReLU(LinearLayer(layer1, policyWeights2));
-        var layer3 = ReLU(LinearLayer(layer2, policyWeights3));
-        var output = LinearLayer(layer3, new double[HIDDEN_LAYER_3_SIZE, actionSize], policyOutputWeights);
-        return Softmax(output);
+        double mean = input.Average();
+        double variance = input.Select(x => Math.Pow(x - mean, 2)).Average();
+        return input.Select(x => (x - mean) / Math.Sqrt(variance + epsilon)).ToArray();
     }
 
     private double ValueForward(double[] input)
@@ -216,7 +287,6 @@ class PPO
 
             state = nextState;
         }
-
         return (trajectory, totalReward);
     }
 
@@ -478,17 +548,27 @@ class PPO
     /// <returns>Chosen action index</returns>
     private int SampleAction(double[] actionProbs)
     {
+        // Check if probabilities are valid
+        double sum = actionProbs.Sum();
+        if (Math.Abs(sum - 1.0) > 1e-3 || actionProbs.Any(p => p < 0 || p > 1))
+        {
+            Console.WriteLine($"Warning: Invalid probability distribution. Sum: {sum}");
+            // Normalize probabilities if they don't sum to 1
+            actionProbs = actionProbs.Select(p => Math.Max(0, p) / actionProbs.Sum(q => Math.Max(0, q))).ToArray();
+        }
+
         double sample = random.NextDouble();
-        double sum = 0;
+        double cumSum = 0;
 
         for (int i = 0; i < actionProbs.Length; i++)
         {
-            sum += actionProbs[i];
-            if (sample <= sum)
+            cumSum += actionProbs[i];
+            if (sample <= cumSum)
                 return i;
         }
 
-        return actionProbs.Length - 1;
+        // Fallback to highest probability action
+        return Array.IndexOf(actionProbs, actionProbs.Max());
     }
 
 
@@ -655,6 +735,7 @@ class PPO
 
         return weight + noise + weightDecay;
     }
+
     /// <summary>
     /// Updates both policy and value networks using collected trajectory data.
     /// </summary>
@@ -664,11 +745,12 @@ class PPO
     /// <param name="oldActionProbs">List of action probabilities from old policy</param>
     /// <param name="values">List of estimated state values</param>
     /// <param name="rewards">List of rewards received</param>
+
     private void UpdateNetworksBatch(TrajectoryData trajectory, List<int> batchIndices)
     {
         double policyLoss = 0;
         double valueLoss = 0;
-        double entropy = 0;
+        double entropySum = 0;
 
         foreach (int idx in batchIndices)
         {
@@ -686,24 +768,28 @@ class PPO
             double valueEstimate = ValueForward(trajectory.states[idx]);
             valueLoss += Math.Pow(valueEstimate - returns, 2);
 
-            // Entropy for exploration
-            entropy += -currentProbs.Sum(p => p * Math.Log(Math.Max(p, 1e-10)));
+            // Calculate entropy for this distribution
+            // Correct entropy calculation
+            double Entropy = -currentProbs.Sum(p => p * Math.Log(Math.Max(p, 1e-6)));
+            entropySum += Entropy; // Accumulate for batch
         }
 
         // Average losses
         int batchSize = batchIndices.Count;
         policyLoss /= batchSize;
         valueLoss /= batchSize;
-        entropy /= batchSize;
+        //Console.WriteLine($"entropy setings: {entropySum} {batchSize}");
+        double entropy = entropySum / batchSize;
+
+        // Dynamic entropy coefficient - decay over time but maintain minimum exploration
+        ENTROPY_COEF = Math.Max(0.001, 0.01 * (1.0 - episodeRewards.Count * 0.0001));
 
         // Track metrics
-        //Console.WriteLine(policyLoss);
-        //Console.WriteLine(valueLoss);
         policyLosses.Add(policyLoss);
         valueLosses.Add(valueLoss);
         entropyValues.Add(entropy);
 
-        // Apply updates
+        // Apply updates - only add the entropy term if entropy is below target
         double totalLoss = policyLoss + VALUE_COEF * valueLoss - ENTROPY_COEF * entropy;
         UpdateNetworkWeights(totalLoss);
     }
