@@ -17,6 +17,15 @@ class GameEnvironment
     private int currentStep;
     public List<int> lastPlayerMove;
 
+    public double pick_the_box = 10;
+    public double place_the_box_good = 10;
+    public double finish_reward = 100;
+    public double droping_box_bad = -1;
+    public double culide_with_wall = -1;
+    public double repeating_actions = -1;
+    public double time_panalty = -1;
+    public double max_steps_panalty = -10;
+
     public GameEnvironment(Game1 game)
     {
         this.game = game;
@@ -62,23 +71,23 @@ class GameEnvironment
         //pick the box
         if (game.player.Intersects(game.box) && game.player.heldBox == null)
         {
-            reward += 1; // Reward for picking up the box
-            Console.WriteLine("Picked up the box. Reward: +10");
+            reward += pick_the_box; // Reward for picking up the box
+            Console.WriteLine("Picked up the box. Reward: " + pick_the_box);
         }
 
         //placing the box on the button
         if (game.box.Intersects(game.button) && game.player.heldBox == null)
         {
-            reward += 10; // Reward for placing the box on the button
-            Console.WriteLine("Placed the box on the button. Reward: +10");
+            reward += place_the_box_good; // Reward for placing the box on the button
+            Console.WriteLine("Placed the box on the button. Reward: " + place_the_box_good);
         }
 
         //exiting the room finish goal
         if (game.IsPressed && IsOutOfBounds(game.player))
         {
-            reward += 100; // Reward for escaping the room
+            reward += finish_reward; // Reward for escaping the room
             IsDone = true;
-            Console.WriteLine("Escaped the room. Reward: +100");
+            Console.WriteLine("Escaped the room. Reward: " + finish_reward);
         }
 
         ///////////////////////////////
@@ -89,29 +98,29 @@ class GameEnvironment
         if (game.player.heldBox == null && game.previousBoxState == true
         && !game.box.Intersects(game.button))
         {
-            reward -= 1; // Penalty for dropping the box for no reason
-            Console.WriteLine("Dropped the box for no reason. Penalty: -1");
+            reward -= droping_box_bad; // Penalty for dropping the box for no reason
+            Console.WriteLine("Dropped the box for no reason. Penalty: " + droping_box_bad);
         }
 
         //culiding with the walls (not the ground)
         if (!game.player.IsGrounded && game.player.Intersects(game.wall))
         {
-            reward -= 1; // Penalty for colliding with the walls
-            Console.WriteLine("Collided with the walls. Penalty: -1");
+            reward -= culide_with_wall; // Penalty for colliding with the walls
+            Console.WriteLine("Collided with the walls. Penalty: " + culide_with_wall);
         }
 
         //repeating actions
         if (RepeatingActions(lastPlayerMove))
         {
-            reward -= 1; // Penalty for repeating the same action
-            Console.WriteLine("Repeated the same action. Penalty: -1");
+            reward -= repeating_actions; // Penalty for repeating the same action
+            Console.WriteLine("Repeated the same action. Penalty: " + repeating_actions);
         }
 
         //time penalty
         if (currentStep % 100 == 0)
         {
-            reward -= 1; // Penalty for taking too long
-            Console.WriteLine("Taking too long. Penalty: -1");
+            reward -= time_panalty; // Penalty for taking too long
+            Console.WriteLine("Taking too long. Penalty: " + time_panalty);
         }
 
         // Reset if out of bounds
@@ -124,11 +133,11 @@ class GameEnvironment
         // Maximum steps penalty
         if (currentStep >= maxSteps)
         {
-            reward -= 10; // Small penalty for exceeding maximum steps
+            reward -= max_steps_panalty; // Small penalty for exceeding maximum steps
             ResetPlayerAndBox();
             IsDone = true;
             currentStep = 0;
-            Console.WriteLine("Exceeded maximum steps. Penalty: -10");
+            Console.WriteLine("Exceeded maximum steps. Penalty: " + max_steps_panalty);
         }
 
         Thread.Sleep(1);

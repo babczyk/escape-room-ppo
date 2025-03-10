@@ -50,6 +50,8 @@ namespace AI_project_escapeRoom
         private HashSet<Point> visitedAreas = new HashSet<Point>();
         public bool previousBoxState = false;
 
+        private int selectedReward = 0;
+
 
         public Game1()
         {
@@ -259,6 +261,61 @@ namespace AI_project_escapeRoom
                 UpdateButtonState();
 
             }
+            KeyboardState state = Keyboard.GetState();
+            if (state.IsKeyDown(Keys.Up))
+            {
+                if (selectedReward > 0)
+                    selectedReward -= 1;
+                Thread.Sleep(100);
+            }
+            if (state.IsKeyDown(Keys.Down))
+            {
+                if (selectedReward < 7)
+                    selectedReward += 1;
+                Thread.Sleep(100);
+            }
+            if (state.IsKeyDown(Keys.Left))
+            {
+                if (selectedReward == 0)
+                    gameEnvironment.pick_the_box += 0.5f;
+                else if (selectedReward == 1)
+                    gameEnvironment.place_the_box_good += 0.5f;
+                else if (selectedReward == 2)
+                    gameEnvironment.finish_reward += 0.5f;
+                else if (selectedReward == 3)
+                    gameEnvironment.droping_box_bad += 0.5f;
+                else if (selectedReward == 4)
+                    gameEnvironment.culide_with_wall += 0.5f;
+                else if (selectedReward == 5)
+                    gameEnvironment.repeating_actions += 0.5f;
+                else if (selectedReward == 6)
+                    gameEnvironment.time_panalty += 0.5f;
+                else if (selectedReward == 7)
+                    gameEnvironment.max_steps_panalty += 0.5f;
+
+                Thread.Sleep(100);
+            }
+            if (state.IsKeyDown(Keys.Right))
+            {
+                if (selectedReward == 0)
+                    gameEnvironment.pick_the_box -= 0.5f;
+                else if (selectedReward == 1)
+                    gameEnvironment.place_the_box_good -= 0.5f;
+                else if (selectedReward == 2)
+                    gameEnvironment.finish_reward -= 0.5f;
+                else if (selectedReward == 3)
+                    gameEnvironment.droping_box_bad -= 0.5f;
+                else if (selectedReward == 4)
+                    gameEnvironment.culide_with_wall -= 0.5f;
+                else if (selectedReward == 5)
+                    gameEnvironment.repeating_actions -= 0.5f;
+                else if (selectedReward == 6)
+                    gameEnvironment.time_panalty -= 0.5f;
+                else if (selectedReward == 7)
+                    gameEnvironment.max_steps_panalty -= 0.5f;
+
+                Thread.Sleep(100);
+            }
 
             base.Update(gameTime);
         }
@@ -343,14 +400,32 @@ namespace AI_project_escapeRoom
 
             // Draw text at the upper corner of the screen
             SpriteFont font = Content.Load<SpriteFont>("File");
-            string title = "Escape Room AI";
-            Vector2 textPosition = new Vector2(10, 10);
-            _spriteBatch.DrawString(font, title, textPosition, Color.Red);
             _spriteBatch.DrawString(font, "Epesode:  " + ppo.curentEpeisode, new Vector2(10, 30), Color.Red);
             _spriteBatch.DrawString(font, "Rewards:  " + ppo.episodeRewards.Sum().ToString(), new Vector2(10, 50), Color.Red);
             _spriteBatch.DrawString(font, "Policy loss:  " + ppo.policyLossesfordispaly.ToString("F3"), new Vector2(10, 70), Color.Red);
             _spriteBatch.DrawString(font, "value loss:  " + ppo.Value_Loss.ToString("F3"), new Vector2(10, 90), Color.Red);
             _spriteBatch.DrawString(font, "Entropy:  " + ppo.Entropy.ToString("F3"), new Vector2(10, 110), Color.Red);
+
+            string[] rewardTexts = new string[]
+            {
+                "Pick the box: " + gameEnvironment.pick_the_box,
+                "Place the box (good): " + gameEnvironment.place_the_box_good,
+                "Finish reward: " + gameEnvironment.finish_reward,
+                "Dropping box (bad): " + gameEnvironment.droping_box_bad,
+                "Collide with wall: " + gameEnvironment.culide_with_wall,
+                "Repeating actions: " + gameEnvironment.repeating_actions,
+                "Time penalty: " + gameEnvironment.time_panalty,
+                "Max steps penalty: " + gameEnvironment.max_steps_panalty
+            };
+
+            for (int i = 0; i < rewardTexts.Length; i++)
+            {
+                if (i == selectedReward)
+                {
+                    rewardTexts[i] = "<<< " + rewardTexts[i] + " >>>";
+                }
+                _spriteBatch.DrawString(font, rewardTexts[i], new Vector2(1000, 30 + i * 20), Color.Red);
+            }
             base.Draw(gameTime);
             _spriteBatch.End();
         }
