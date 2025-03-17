@@ -26,27 +26,17 @@ class PPO
     private double[,] policyWeights2;
     private double[,] policyWeights3;
     private double[] policyOutputWeights;
-
+    private double[,] policyWeightsOutput;
     private double[,] valueWeights1;
     private double[,] valueWeights2;
     private double[,] valueWeights3;
     private double[] valueOutputWeights;
 
-    // Weight gradients and momentum for proper updates
-    private double[,] policyGradients1;
-    private double[,] policyGradients2;
-    private double[,] policyGradients3;
-    private double[] policyOutputGradients;
-
-    private double[,] valueGradients1;
-    private double[,] valueGradients2;
-    private double[,] valueGradients3;
-    private double[] valueOutputGradients;
 
     // Hyperparameters
     private const double GAMMA = 0.99f;
-    private const double CLIP_EPSILON = 0.2f;
-    private const double LEARNING_RATE = 0.0001f;
+    private const double CLIP_EPSILON = 0.3f;
+    private const double LEARNING_RATE = 0.005f;
     private const int EPOCHS = 4;
     private double ENTROPY_COEF = 0.01f; // Made non-constant to allow decay
     private const double VALUE_COEF = 0.5f;
@@ -72,7 +62,7 @@ class PPO
     /// Initializes a new instance of the PPO class.
     /// Sets up the neural networks for both policy and value functions.
     /// </summary>
-    public PPO(int stateSize = 6, int actionSize = 5)
+    public PPO(int stateSize = 11, int actionSize = 5)
     {
         this.stateSize = stateSize;
         this.actionSize = actionSize;
@@ -90,16 +80,7 @@ class PPO
         valueWeights3 = InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
         valueOutputWeights = InitializeWeights(HIDDEN_LAYER_3_SIZE, 1).Cast<double>().ToArray();
 
-        // Initialize gradients and momentum
-        policyGradients1 = new double[stateSize, HIDDEN_LAYER_1_SIZE];
-        policyGradients2 = new double[HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE];
-        policyGradients3 = new double[HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE];
-        policyOutputGradients = new double[HIDDEN_LAYER_3_SIZE];
-
-        valueGradients1 = new double[stateSize, HIDDEN_LAYER_1_SIZE];
-        valueGradients2 = new double[HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE];
-        valueGradients3 = new double[HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE];
-        valueOutputGradients = new double[HIDDEN_LAYER_3_SIZE];
+        policyWeightsOutput = InitializeWeights(HIDDEN_LAYER_3_SIZE, actionSize);
 
         // Initialize BatchNorm statistics
         runningMean = new double[stateSize];
@@ -164,7 +145,7 @@ class PPO
     /// </summary>
     /// <param name="x">Input vector</param>
     /// <returns>Vector with ReLU activation applied</returns>
-    private double[] ReLU(double[] x, double alpha = 0.01)
+    private double[] ReLU(double[] x, double alpha = 0.01) // Use small negative slope
     {
         return x.Select(v => v >= 0 ? v : alpha * v).ToArray();
     }
@@ -176,35 +157,31 @@ class PPO
     /// <returns>Probability distribution that sums to 1</returns>
     private double[] Softmax(double[] logits)
     {
-        double maxLogit = logits.Max();
-        double[] expValues = logits.Select(l => Math.Exp(l - maxLogit)).ToArray();
+        double maxLogit = logits.Max(); // Prevents numerical instability
+        double temperature = 2.0; // Adjust exploration
+        double[] expValues = logits.Select(l => Math.Exp((l - maxLogit) / temperature)).ToArray();
         double sumExp = expValues.Sum();
         return expValues.Select(e => e / sumExp).ToArray();
     }
 
     private double[] PolicyForward(double[] input)
     {
+
         var layer1 = ReLU(LinearLayer(input, policyWeights1));
         var layer2 = ReLU(LinearLayer(layer1, policyWeights2));
-
-
         var layer3 = ReLU(LinearLayer(layer2, policyWeights3));
-        var output = LinearLayer(layer3, new double[HIDDEN_LAYER_3_SIZE, actionSize], policyOutputWeights);
-        //Console.WriteLine($"Logits: {string.Join(", ", output)}");
 
-        // Scale logits before Softmax to avoid uniform distributions
+        var output = LinearLayer(layer3, policyWeightsOutput, policyOutputWeights);
+
+        // Softmax scaling fix
         for (int i = 0; i < output.Length; i++)
         {
-            output[i] *= 10; ;   // Adjust scaling factor if needed
+            output[i] *= 12;
         }
-        var outputReturn = Softmax(output);
-        if (outputReturn.Contains(Double.NaN) || outputReturn.Contains(Double.PositiveInfinity))
-        {
-            Console.WriteLine("Logits or Softmax output contains NaN or Inf");
-        }
-        return Softmax(outputReturn);
-    }
+        var probabilities = Softmax(output);
 
+        return probabilities;
+    }
     public static double RandomGaussian(double mean = 0.0, double stdDev = 1.0)
     {
         double u1 = 1.0 - rng.NextDouble(); // Uniform(0,1] random value
@@ -241,14 +218,6 @@ class PPO
             return advantages.Select(a => (a - mean) / std).ToList();
         }
         return advantages;
-    }
-
-    private double[] BatchNorm(double[] input, double epsilon = 1e-5)
-    {
-        double mean = input.Average();
-        double variance = input.Select(x => Math.Pow(x - mean, 2)).Average();
-        variance = variance < 1e-6 ? 1e-6 : variance;
-        return input.Select(x => (x - mean) / Math.Sqrt(variance + epsilon)).ToArray();
     }
 
     private double ValueForward(double[] input)
@@ -327,17 +296,12 @@ class PPO
             episodeRewards.Add(totalReward);
             totalRewardInEpisode = totalReward;
             averageReward = episodeRewards.TakeLast(5).Average(); //take an avrege of 50 episodes (50 generations)
-            //Conosle.WriteLine($"avrege reward {averageReward}:");
             // Log progress
             if (episode % 5 == 0)
             {
-                //Conosle.WriteLine($"Episode {episode}:");
-                //Conosle.WriteLine($"Total Reward: {totalReward:F2}");
-                //Conosle.WriteLine($"Average Reward: {averageReward:F2}");
                 policyLossesfordispaly = policyLosses.LastOrDefault();
                 Value_Loss = valueLosses.LastOrDefault();
                 Entropy = entropyValues.LastOrDefault();
-                //Conosle.WriteLine("--------------------");
                 SaveProgress(progressPath, episode, bestReward, episodeRewards);
             }
 

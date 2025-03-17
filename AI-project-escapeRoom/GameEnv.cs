@@ -35,15 +35,19 @@ class GameEnvironment
 
     public double[] GetState()
     {
-        // Example state representation
         return new double[]
         {
-            game.player.Position.X / game.widthLevel,
-            game.player.Position.Y / game.groundLevel,
-            game.box.Position.X / game.widthLevel,
-            game.box.Position.Y / game.groundLevel,
-            game.IsPressed ? 1.0 : 0.0,
-            game.IsOpen ? 1.0 : 0.0
+        game.player.Position.X / game.widthLevel,
+        game.player.Position.Y / game.groundLevel,
+        game.box.Position.X / game.widthLevel,
+        game.box.Position.Y / game.groundLevel,
+        game.button.Position.X / game.widthLevel,
+        game.button.Position.Y / game.groundLevel,
+        game.door.Position.X / game.widthLevel,
+        game.door.Position.Y / game.groundLevel,
+        game.player.heldBox != null ? 1.0 : 0.0,
+        game.IsPressed ? 1.0 : 0.0,
+        game.IsOpen ? 1.0 : 0.0
         };
     }
 
@@ -72,14 +76,14 @@ class GameEnvironment
         if (game.player.Intersects(game.box) && game.player.heldBox == null)
         {
             reward += pick_the_box; // Reward for picking up the box
-            Console.WriteLine("Picked up the box. Reward: " + pick_the_box);
+            //Console.WriteLine("Picked up the box. Reward: " + pick_the_box);
         }
 
         //placing the box on the button
         if (game.box.Intersects(game.button) && game.player.heldBox == null)
         {
             reward += place_the_box_good; // Reward for placing the box on the button
-            Console.WriteLine("Placed the box on the button. Reward: " + place_the_box_good);
+            //Console.WriteLine("Placed the box on the button. Reward: " + place_the_box_good);
         }
 
         //exiting the room finish goal
@@ -87,7 +91,7 @@ class GameEnvironment
         {
             reward += finish_reward; // Reward for escaping the room
             IsDone = true;
-            Console.WriteLine("Escaped the room. Reward: " + finish_reward);
+            //Console.WriteLine("Escaped the room. Reward: " + finish_reward);
         }
 
         ///////////////////////////////
@@ -99,14 +103,14 @@ class GameEnvironment
         && !game.box.Intersects(game.button))
         {
             reward -= droping_box_bad; // Penalty for dropping the box for no reason
-            Console.WriteLine("Dropped the box for no reason. Penalty: " + droping_box_bad);
+            //Console.WriteLine("Dropped the box for no reason. Penalty: " + droping_box_bad);
         }
 
         //culiding with the walls (not the ground)
         if (!game.player.IsGrounded && game.player.Intersects(game.wall))
         {
             reward -= culide_with_wall; // Penalty for colliding with the walls
-            Console.WriteLine("Collided with the walls. Penalty: " + culide_with_wall);
+            //Console.WriteLine("Collided with the walls. Penalty: " + culide_with_wall);
         }
 
         //repeating actions
@@ -119,14 +123,14 @@ class GameEnvironment
         if (currentStep % 100 == 0)
         {
             reward -= time_panalty; // Penalty for taking too long
-            Console.WriteLine("Taking too long. Penalty: " + time_panalty);
+            //Console.WriteLine("Taking too long. Penalty: " + time_panalty);
         }
 
         // Reset if out of bounds
         if (IsOutOfBounds(game.player) || IsOutOfBounds(game.box))
         {
             ResetPlayerAndBox();
-            Console.WriteLine("Out of bounds. Resetting player and box.");
+            //Console.WriteLine("Out of bounds. Resetting player and box.");
         }
 
         // Maximum steps penalty
@@ -136,10 +140,10 @@ class GameEnvironment
             ResetPlayerAndBox();
             IsDone = true;
             currentStep = 0;
-            Console.WriteLine("Exceeded maximum steps. Penalty: " + max_steps_panalty);
+            //Console.WriteLine("Exceeded maximum steps. Penalty: " + max_steps_panalty);
         }
 
-        //Thread.Sleep(1);
+        Thread.Sleep(20);
         return (GetState(), reward, IsDone);
     }
 
