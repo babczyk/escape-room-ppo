@@ -401,7 +401,7 @@ namespace AI_project_escapeRoom
 
             // Draw text at the upper corner of the screen
             SpriteFont font = Content.Load<SpriteFont>("File");
-            _spriteBatch.DrawString(font, "Epesode:  " + ppo.curentEpeisode, new Vector2(10, 30), Color.Red);
+            _spriteBatch.DrawString(font, "Epesode:  " + ppo.curentEpisode, new Vector2(10, 30), Color.Red);
             _spriteBatch.DrawString(font, "Rewards:  " + ppo.totalRewardInEpisode.ToString(), new Vector2(10, 50), Color.Red);
             _spriteBatch.DrawString(font, "Policy loss:  " + ppo.policyLossesfordispaly.ToString("F3"), new Vector2(10, 70), Color.Red);
             _spriteBatch.DrawString(font, "value loss:  " + ppo.Value_Loss.ToString("F3"), new Vector2(10, 90), Color.Red);

@@ -15,7 +15,7 @@ class GameEnvironment
     private Game1 game;
     private int maxSteps = 5000;
     private int currentStep;
-    public List<int> lastPlayerMove;
+    public List<int> PlayerMove;
 
     public double pick_the_box = 10;
     public double place_the_box_good = 10;
@@ -30,7 +30,7 @@ class GameEnvironment
     {
         this.game = game;
         this.currentStep = 0;
-        this.lastPlayerMove = new List<int>();
+        this.PlayerMove = new List<int>();
     }
 
     public double[] GetState()
@@ -63,7 +63,7 @@ class GameEnvironment
             case 4: game.player.DropHeldBox(); break; // Interact (e.g., drop the box)
         }
 
-        lastPlayerMove.Add(action);
+        PlayerMove.Add(action);
         ///////////////////////////////
         // Rewards for key objectives//
         ///////////////////////////////
@@ -110,10 +110,9 @@ class GameEnvironment
         }
 
         //repeating actions
-        if (RepeatingActions(lastPlayerMove))
+        if (PlayerMove.Skip(PlayerMove.Count - 50).Distinct().Count() < 3)
         {
-            reward -= repeating_actions; // Penalty for repeating the same action
-            Console.WriteLine("Repeated the same action. Penalty: " + repeating_actions);
+            reward -= repeating_actions;
         }
 
         //time penalty
@@ -140,23 +139,10 @@ class GameEnvironment
             Console.WriteLine("Exceeded maximum steps. Penalty: " + max_steps_panalty);
         }
 
-        Thread.Sleep(1);
+        //Thread.Sleep(1);
         return (GetState(), reward, IsDone);
     }
 
-    public bool RepeatingActions(List<int> actions)
-    {
-        int length = 100;
-        if (actions.Count < length * 2)
-        {
-            return false;
-        }
-
-        var lastActions = actions.GetRange(actions.Count - length, length);
-        var previousActions = actions.GetRange(actions.Count - length * 2, length);
-
-        return lastActions.SequenceEqual(previousActions);
-    }
     // Helper methods
     private bool IsOutOfBounds(GameObject obj)
     {

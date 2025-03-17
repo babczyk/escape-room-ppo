@@ -10,7 +10,7 @@ using Microsoft.Xna.Framework;
 class PPO
 {
     private static Random rng = new Random();
-    public int curentEpeisode = 0;
+    public int curentEpisode = 0;
     public double policyLossesfordispaly = 0;
     public double Value_Loss = 0;
     public double Entropy = 0;
@@ -125,7 +125,7 @@ class PPO
     private double[,] InitializeWeights(int inputSize, int outputSize)
     {
         double[,] weights = new double[inputSize, outputSize];
-        double scale = Math.Sqrt(2.0 / inputSize);
+        double scale = Math.Sqrt(1.0 / inputSize);
 
         for (int i = 0; i < inputSize; i++)
             for (int j = 0; j < outputSize; j++)
@@ -176,15 +176,8 @@ class PPO
     /// <returns>Probability distribution that sums to 1</returns>
     private double[] Softmax(double[] logits)
     {
-        // Normalize logits to avoid numerical instability
-        double mean = logits.Average();
-        double std = Math.Sqrt(logits.Select(l => Math.Pow(l - mean, 2)).Average());
-
-        // Normalize to have zero mean and unit variance (if std > 0)
-        double[] normalizedLogits = std > 0 ? logits.Select(l => (l - mean) / std).ToArray() : logits;
-
-        double maxLogit = normalizedLogits.Max();
-        double[] expValues = normalizedLogits.Select(l => Math.Exp(l - maxLogit)).ToArray();
+        double maxLogit = logits.Max();
+        double[] expValues = logits.Select(l => Math.Exp(l - maxLogit)).ToArray();
         double sumExp = expValues.Sum();
         return expValues.Select(e => e / sumExp).ToArray();
     }
@@ -194,8 +187,6 @@ class PPO
         var layer1 = ReLU(LinearLayer(input, policyWeights1));
         var layer2 = ReLU(LinearLayer(layer1, policyWeights2));
 
-        // BatchNorm to stabilize training
-        layer2 = BatchNorm(layer2);
 
         var layer3 = ReLU(LinearLayer(layer2, policyWeights3));
         var output = LinearLayer(layer3, new double[HIDDEN_LAYER_3_SIZE, actionSize], policyOutputWeights);
@@ -204,7 +195,7 @@ class PPO
         // Scale logits before Softmax to avoid uniform distributions
         for (int i = 0; i < output.Length; i++)
         {
-            output[i] *= 10 * RandomGaussian(0, 0.01); ;   // Adjust scaling factor if needed
+            output[i] *= 10; ;   // Adjust scaling factor if needed
         }
         var outputReturn = Softmax(output);
         if (outputReturn.Contains(Double.NaN) || outputReturn.Contains(Double.PositiveInfinity))
@@ -256,6 +247,7 @@ class PPO
     {
         double mean = input.Average();
         double variance = input.Select(x => Math.Pow(x - mean, 2)).Average();
+        variance = variance < 1e-6 ? 1e-6 : variance;
         return input.Select(x => (x - mean) / Math.Sqrt(variance + epsilon)).ToArray();
     }
 
@@ -314,7 +306,7 @@ class PPO
         }
         for (; episode < episodes; episode++)
         {
-            curentEpeisode = episode;
+            curentEpisode = episode;
             var (trajectory, totalReward) = CollectTrajectory(env);
 
             // Update networks multiple times with the collected data
@@ -364,7 +356,7 @@ class PPO
             }
 
             // Early stopping
-            if (episodesSinceImprovement > 200)
+            if (episode > 50 && averageReward < bestReward * 0.9)
             {
                 Console.WriteLine("Early stopping triggered - No improvement for 200 episodes");
                 break;
@@ -559,27 +551,28 @@ class PPO
     /// <returns>Chosen action index</returns>
     private int SampleAction(double[] actionProbs)
     {
-        // Check if probabilities are valid
-        double sum = actionProbs.Sum();
-        if (Math.Abs(sum - 1.0) > 1e-3 || actionProbs.Any(p => p < 0 || p > 1))
-        {
-            Console.WriteLine($"Warning: Invalid probability distribution. Sum: {sum}");
-            // Normalize probabilities if they don't sum to 1
-            actionProbs = actionProbs.Select(p => Math.Max(0, p) / actionProbs.Sum(q => Math.Max(0, q))).ToArray();
-        }
+        double temperature = 1.0; // Start high for exploration, decay over time
+        temperature = Math.Max(0.1, temperature * Math.Exp(-0.0005 * episodeRewards.Count));
 
+        // Apply temperature scaling
+        double[] scaledProbs = actionProbs.Select(p => Math.Pow(p, 1 / temperature)).ToArray();
+
+        // Normalize probabilities
+        double sumScaled = scaledProbs.Sum();
+        double[] finalProbs = scaledProbs.Select(p => p / sumScaled).ToArray();
+
+        // Sample action based on final probabilities
         double sample = random.NextDouble();
         double cumSum = 0;
 
-        for (int i = 0; i < actionProbs.Length; i++)
+        for (int i = 0; i < finalProbs.Length; i++)
         {
-            cumSum += actionProbs[i];
+            cumSum += finalProbs[i];
             if (sample <= cumSum)
                 return i;
         }
 
-        // Fallback to highest probability action
-        return Array.IndexOf(actionProbs, actionProbs.Max());
+        return Array.IndexOf(finalProbs, finalProbs.Max()); // Fallback to the best action
     }
 
 
@@ -612,7 +605,7 @@ class PPO
                 policyWeights1[i, j] -= update;
 
                 // Store gradient for momentum
-                policyWeights1[i, j] = gradient;
+                //policyWeights1[i, j] = gradient;
             }
         }
 
@@ -626,7 +619,7 @@ class PPO
                 double update = currentLearningRate * (gradient + momentum);
                 update = Math.Clamp(update, -1.0, 1.0);
                 policyWeights2[i, j] -= update;
-                policyWeights2[i, j] = gradient;
+                //policyWeights2[i, j] = gradient;
             }
         }
 
@@ -640,7 +633,7 @@ class PPO
                 double update = currentLearningRate * (gradient + momentum);
                 update = Math.Clamp(update, -1.0, 1.0);
                 policyWeights3[i, j] -= update;
-                policyWeights3[i, j] = gradient;
+                //policyWeights3[i, j] = gradient;
             }
         }
 
@@ -652,7 +645,7 @@ class PPO
             double update = currentLearningRate * (gradient + momentum);
             update = Math.Clamp(update, -1.0, 1.0);
             policyOutputWeights[i] -= update;
-            policyOutputWeights[i] = gradient;
+            //policyOutputWeights[i] = gradient;
         }
     }
 
@@ -683,7 +676,7 @@ class PPO
                 valueWeights1[i, j] -= update;
 
                 // Store gradient for future momentum updates
-                valueWeights1[i, j] = gradient;
+                //valueWeights1[i, j] = gradient;
             }
         }
 
@@ -697,7 +690,7 @@ class PPO
                 double update = currentLearningRate * (gradient + momentum);
                 update = Math.Clamp(update, -1.0, 1.0);
                 valueWeights2[i, j] -= update;
-                valueWeights2[i, j] = gradient;
+                //valueWeights2[i, j] = gradient;
             }
         }
 
@@ -711,7 +704,7 @@ class PPO
                 double update = currentLearningRate * (gradient + momentum);
                 update = Math.Clamp(update, -1.0, 1.0);
                 valueWeights3[i, j] -= update;
-                valueWeights3[i, j] = gradient;
+                //valueWeights3[i, j] = gradient;
             }
         }
 
@@ -723,7 +716,7 @@ class PPO
             double update = currentLearningRate * (gradient + momentum);
             update = Math.Clamp(update, -1.0, 1.0);
             valueOutputWeights[i] -= update;
-            valueOutputWeights[i] = gradient;
+            //valueOutputWeights[i] = gradient;
         }
     }
 
@@ -797,7 +790,7 @@ class PPO
         double entropy = entropySum / batchSize;
 
         // Dynamic entropy coefficient - decay over time but maintain minimum exploration
-        ENTROPY_COEF = Math.Max(0.001, 0.001 * (1.0 - episodeRewards.Count * 0.00005));
+        ENTROPY_COEF = Math.Max(0.001, 0.01 * Math.Exp(-episodeRewards.Count * 0.0001));
 
         // Track metrics
         policyLosses.Add(policyLoss);
@@ -805,58 +798,25 @@ class PPO
         entropyValues.Add(entropy);
 
         // Apply updates - only add the entropy term if entropy is below target
-        double totalLoss = policyLoss + VALUE_COEF * valueLoss - ENTROPY_COEF * entropy;
+        double totalLoss = policyLoss + VALUE_COEF * valueLoss + ENTROPY_COEF * entropy;
         UpdateNetworkWeights(totalLoss);
     }
 
-    /// <summary>
-    /// Updates the policy network weights using gradient descent.
-    /// </summary>
-    /// <param name="state">Current state vector</param>
-    /// <param name="action">Taken action</param>
-    /// <param name="loss">Computed policy loss</param>
-    private void UpdatePolicyWeights(double[] state, int action, double loss)
+    class TrajectoryData
     {
-        // Simple gradient descent update
-        for (int i = 0; i < policyWeights1.GetLength(0); i++)
-            for (int j = 0; j < policyWeights1.GetLength(1); j++)
-                policyWeights1[i, j] -= LEARNING_RATE * loss * state[i];
+        public List<double[]> states = new List<double[]>();
+        public List<int> actions = new List<int>();
+        public List<double> oldActionProbs = new List<double>();
+        public List<double> values = new List<double>();
+        public List<double> rewards = new List<double>();
+        public List<double> advantages = new List<double>();
 
-        for (int i = 0; i < policyWeights2.Length; i++)
-            policyOutputWeights[i] -= LEARNING_RATE * loss;
-    }
-
-    /// <summary>
-    /// Updates the value network weights using gradient descent.
-    /// </summary>
-    /// <param name="state">Current state vector</param>
-    /// <param name="loss">Computed value loss</param>
-    private void UpdateValueWeights(double[] state, double loss)
-    {
-        for (int i = 0; i < valueWeights1.GetLength(0); i++)
-            for (int j = 0; j < valueWeights1.GetLength(1); j++)
-                valueWeights1[i, j] -= LEARNING_RATE * loss * state[i];
-
-        for (int i = 0; i < valueWeights2.Length; i++)
-            valueOutputWeights[i] -= LEARNING_RATE * loss;
-    }
-
-}
-
-class TrajectoryData
-{
-    public List<double[]> states = new List<double[]>();
-    public List<int> actions = new List<int>();
-    public List<double> oldActionProbs = new List<double>();
-    public List<double> values = new List<double>();
-    public List<double> rewards = new List<double>();
-    public List<double> advantages = new List<double>();
-
-    public void AddStep(double[] state, int action, double actionProb, double value)
-    {
-        states.Add(state);
-        actions.Add(action);
-        oldActionProbs.Add(actionProb);
-        values.Add(value);
+        public void AddStep(double[] state, int action, double actionProb, double value)
+        {
+            states.Add(state);
+            actions.Add(action);
+            oldActionProbs.Add(actionProb);
+            values.Add(value);
+        }
     }
 }
