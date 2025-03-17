@@ -578,7 +578,7 @@ class PPO
             double update = currentLearningRate * (gradient + momentum);
 
             // Update weight with gradient clipping
-            update = Math.Clamp(update, -50.0, 50.0);
+            update = Math.Clamp(update, -1.0, 1.0);
             policyBias1[i] -= update;
 
             // Store gradient for momentum
@@ -591,7 +591,7 @@ class PPO
             double gradient = loss * CalculateLayerGradient(policyBias2[i]);
             double momentum = 0.9 * policyBias2[i];
             double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -50.0, 50.0);
+            update = Math.Clamp(update, -1.0, 1.0);
             policyBias2[i] -= update;
             //policyWeights2[i, j] = gradient;
         }
@@ -602,7 +602,7 @@ class PPO
             double gradient = loss * CalculateLayerGradient(policyBias3[i]);
             double momentum = 0.9 * policyBias3[i];
             double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -50.0, 50.0);
+            update = Math.Clamp(update, -1.0, 1.0);
             policyBias3[i] -= update;
             //policyWeights3[i, j] = gradient;
         }
@@ -613,7 +613,7 @@ class PPO
             double gradient = loss * CalculateOutputGradient(policyOutputBias[i]);
             double momentum = 0.9 * policyOutputBias[i];
             double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -50.0, 50.0);
+            update = Math.Clamp(update, -1.0, 1.0);
             policyOutputBias[i] -= update;
             //policyOutputWeights[i] = gradient;
         }
@@ -635,7 +635,7 @@ class PPO
                 double update = currentLearningRate * (gradient + momentum);
 
                 // Update weight with gradient clipping
-                update = Math.Clamp(update, -50.0, 50.0);
+                update = Math.Clamp(update, -1.0, 1.0);
                 policyWeights1[i, j] -= update;
 
                 // Store gradient for momentum
@@ -651,7 +651,7 @@ class PPO
                 double gradient = loss * CalculateLayerGradient(policyWeights2[i, j]);
                 double momentum = 0.9 * policyWeights2[i, j];
                 double update = currentLearningRate * (gradient + momentum);
-                update = Math.Clamp(update, -50.0, 50.0);
+                update = Math.Clamp(update, -1.0, 1.0);
                 policyWeights2[i, j] -= update;
                 //policyWeights2[i, j] = gradient;
             }
@@ -665,7 +665,7 @@ class PPO
                 double gradient = loss * CalculateLayerGradient(policyWeights3[i, j]);
                 double momentum = 0.9 * policyWeights3[i, j];
                 double update = currentLearningRate * (gradient + momentum);
-                update = Math.Clamp(update, -50.0, 50.0);
+                update = Math.Clamp(update, -1.0, 1.0);
                 policyWeights3[i, j] -= update;
                 //policyWeights3[i, j] = gradient;
             }
@@ -677,7 +677,7 @@ class PPO
             double gradient = loss * CalculateOutputGradient(policyOutputWeights[i]);
             double momentum = 0.9 * policyOutputWeights[i];
             double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -50.0, 50.0);
+            update = Math.Clamp(update, -1.0, 1.0);
             policyOutputWeights[i] -= update;
             //policyOutputWeights[i] = gradient;
         }
@@ -704,7 +704,7 @@ class PPO
                 double update = currentLearningRate * (gradient + momentum);
 
                 // Apply gradient clipping
-                update = Math.Clamp(update, -50.0, 50.0);
+                update = Math.Clamp(update, -1.0, 1.0);
 
                 // Update weights
                 valueWeights1[i, j] -= update;
@@ -722,7 +722,7 @@ class PPO
                 double gradient = loss * CalculateLayerGradient(valueWeights2[i, j]);
                 double momentum = 0.9 * valueWeights2[i, j];
                 double update = currentLearningRate * (gradient + momentum);
-                update = Math.Clamp(update, -50.0, 50.0);
+                update = Math.Clamp(update, -1.0, 1.0);
                 valueWeights2[i, j] -= update;
                 //valueWeights2[i, j] = gradient;
             }
@@ -736,7 +736,7 @@ class PPO
                 double gradient = loss * CalculateLayerGradient(valueWeights3[i, j]);
                 double momentum = 0.9 * valueWeights3[i, j];
                 double update = currentLearningRate * (gradient + momentum);
-                update = Math.Clamp(update, -50.0, 50.0);
+                update = Math.Clamp(update, -1.0, 1.0);
                 valueWeights3[i, j] -= update;
                 //valueWeights3[i, j] = gradient;
             }
@@ -748,7 +748,7 @@ class PPO
             double gradient = loss * CalculateOutputGradient(valueOutputWeights[i]);
             double momentum = 0.9 * valueOutputWeights[i];
             double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -50.0, 50.0);
+            update = Math.Clamp(update, -1.0, 1.0);
             valueOutputWeights[i] -= update;
             //valueOutputWeights[i] = gradient;
         }

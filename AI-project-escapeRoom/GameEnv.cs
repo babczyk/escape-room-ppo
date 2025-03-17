@@ -13,7 +13,7 @@ using System.Collections.Generic;
 class GameEnvironment
 {
     private Game1 game;
-    private int maxSteps = 5000;
+    private int maxSteps = 10000;
     private int currentStep;
     public List<int> PlayerMove;
 
