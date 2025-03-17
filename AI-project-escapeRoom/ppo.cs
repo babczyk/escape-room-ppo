@@ -345,6 +345,7 @@ class PPO
     /// <typeparam name="T"></typeparam>
     /// <param name="filePath"></param>
     /// <returns></returns>
+    // Load the entire model including weights, biases, and batch norm stats
     private void LoadModel(string filePath)
     {
         if (!File.Exists(filePath))
@@ -354,33 +355,31 @@ class PPO
         {
             string json = File.ReadAllText(filePath);
 
-            // Use JsonDocument for more flexible parsing
             using (JsonDocument document = JsonDocument.Parse(json))
             {
                 var root = document.RootElement;
 
-                // Get policy weights (use case-insensitive property matching)
-                var policy1Property = GetProperty(root, "POLICY1");
-                var policy2Property = GetProperty(root, "POLICY2");
-                var policy3Property = GetProperty(root, "POLICY3");
-                var policyOutputProperty = GetProperty(root, "POLICY_OUTPUT");
+                // Load policy network weights and biases
+                policyWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("POLICY1").GetRawText()));
+                policyWeights2 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("POLICY2").GetRawText()));
+                policyWeights3 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("POLICY3").GetRawText()));
+                policyOutputWeights = JsonSerializer.Deserialize<double[]>(root.GetProperty("POLICY_OUTPUT").GetRawText());
+                policyWeightsOutput = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("POLICY_WEIGHTS_OUTPUT").GetRawText()));
+                policyBias1 = JsonSerializer.Deserialize<double[]>(root.GetProperty("POLICY_BIAS1").GetRawText());
+                policyBias2 = JsonSerializer.Deserialize<double[]>(root.GetProperty("POLICY_BIAS2").GetRawText());
+                policyBias3 = JsonSerializer.Deserialize<double[]>(root.GetProperty("POLICY_BIAS3").GetRawText());
+                policyOutputBias = JsonSerializer.Deserialize<double[]>(root.GetProperty("POLICY_OUTPUT_BIAS").GetRawText());
 
-                // Get value weights
-                var value1Property = GetProperty(root, "VALUE1");
-                var value2Property = GetProperty(root, "VALUE2");
-                var value3Property = GetProperty(root, "VALUE3");
-                var valueOutputProperty = GetProperty(root, "VALUE_OUTPUT");
+                // Load value network weights
+                valueWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("VALUE1").GetRawText()));
+                valueWeights2 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("VALUE2").GetRawText()));
+                valueWeights3 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("VALUE3").GetRawText()));
+                valueOutputWeights = JsonSerializer.Deserialize<double[]>(root.GetProperty("VALUE_OUTPUT").GetRawText());
+                valueWeightsOutput = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("VALUE_WEIGHTS_OUTPUT").GetRawText()));
 
-                // Deserialize with appropriate types
-                policyWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(policy1Property.GetRawText()));
-                policyWeights2 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(policy2Property.GetRawText()));
-                policyWeights3 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(policy3Property.GetRawText()));
-                policyOutputWeights = JsonSerializer.Deserialize<double[]>(policyOutputProperty.GetRawText());
-
-                valueWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(value1Property.GetRawText()));
-                valueWeights2 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(value2Property.GetRawText()));
-                valueWeights3 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(value3Property.GetRawText()));
-                valueOutputWeights = JsonSerializer.Deserialize<double[]>(valueOutputProperty.GetRawText());
+                // Load BatchNorm statistics
+                runningMean = JsonSerializer.Deserialize<double[]>(root.GetProperty("RUNNING_MEAN").GetRawText());
+                runningVar = JsonSerializer.Deserialize<double[]>(root.GetProperty("RUNNING_VAR").GetRawText());
             }
 
             Console.WriteLine($"Model successfully loaded from {filePath}");
@@ -388,8 +387,7 @@ class PPO
         catch (Exception ex)
         {
             Console.WriteLine($"Error loading model: {ex.Message}");
-            Console.WriteLine(ex.StackTrace);
-            throw; // Re-throw the exception to make sure it doesn't fail silently
+            throw;
         }
     }
 
@@ -449,27 +447,40 @@ class PPO
     /// </summary>
     /// <param name="filePath"></param>
     /// <param name="model"></param>
+    // Save the entire model including weights, biases, and batch norm stats
     private void SaveModel(string filePath, int episode = 1)
     {
         var model = new
         {
-            IN_EPESODE = episode,
+            IN_EPISODE = episode,
+
+            // Policy network weights and biases
             POLICY1 = ConvertToJaggedArray(policyWeights1),
             POLICY2 = ConvertToJaggedArray(policyWeights2),
             POLICY3 = ConvertToJaggedArray(policyWeights3),
             POLICY_OUTPUT = policyOutputWeights,
+            POLICY_WEIGHTS_OUTPUT = ConvertToJaggedArray(policyWeightsOutput),
+            POLICY_BIAS1 = policyBias1,
+            POLICY_BIAS2 = policyBias2,
+            POLICY_BIAS3 = policyBias3,
+            POLICY_OUTPUT_BIAS = policyOutputBias,
 
+            // Value network weights
             VALUE1 = ConvertToJaggedArray(valueWeights1),
             VALUE2 = ConvertToJaggedArray(valueWeights2),
             VALUE3 = ConvertToJaggedArray(valueWeights3),
-            VALUE_OUTPUT = valueOutputWeights
+            VALUE_OUTPUT = valueOutputWeights,
+            VALUE_WEIGHTS_OUTPUT = ConvertToJaggedArray(valueWeightsOutput),
 
-
+            // BatchNorm statistics
+            RUNNING_MEAN = runningMean,
+            RUNNING_VAR = runningVar
         };
 
         string json = JsonSerializer.Serialize(model, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(filePath, json);
     }
+
 
     /// <summary>
     /// Saves the current training progress to a JSON file.
