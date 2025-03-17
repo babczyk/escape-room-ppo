@@ -43,10 +43,10 @@ class PPO
     // Hyperparameters
     private const double GAMMA = 0.99f;
     private const double CLIP_EPSILON = 0.3f;
-    private const double LEARNING_RATE = 0.005f;
-    private const int EPOCHS = 4;
+    private const double LEARNING_RATE = 0.01f;
+    private const int EPOCHS = 6;
     private double ENTROPY_COEF = 0.01f; // Made non-constant to allow decay
-    private const double VALUE_COEF = 0.5f;
+    private const double VALUE_COEF = 0.3f;
     private const int BATCH_SIZE = 64;
 
     // Training metrics
@@ -224,7 +224,7 @@ class PPO
         if (advantages.Count > 0)
         {
             double mean = advantages.Average();
-            double std = Math.Sqrt(advantages.Select(x => Math.Pow(x - mean, 2)).Average() + 1e-8);
+            double std = Math.Sqrt(advantages.Select(x => Math.Pow(x - mean, 2)).Average() + 1e-5);
             return advantages.Select(a => (a - mean) / std).ToList();
         }
         return advantages;
@@ -251,7 +251,7 @@ class PPO
             double[] stateVector = state.Select(s => (double)s).ToArray();
             double[] actionProbs = PolicyForward(stateVector);
             int action = SampleAction(actionProbs);
-            Console.WriteLine($"Action:**** {action} ****     ActionProbs: {string.Join(",", actionProbs)}");
+            //Console.WriteLine($"Action:**** {action} ****     ActionProbs: {string.Join(",", actionProbs)}");
             double actionProb = actionProbs[action];
             double valueEstimate = ValueForward(stateVector);
             trajectory.AddStep(stateVector, action, actionProb, valueEstimate);
@@ -527,15 +527,28 @@ class PPO
     /// <returns>Chosen action index</returns>
     private int SampleAction(double[] actionProbs)
     {
-        double sample = random.NextDouble();
-        double cumSum = 0;
-        for (int i = 0; i < actionProbs.Length; i++)
+        double epsilon = Math.Max(0.1, 1.0 * Math.Exp(-0.001 * episodeRewards.Count)); // Decay exploration over time
+
+        if (random.NextDouble() < epsilon)
         {
-            cumSum += actionProbs[i];
-            if (sample <= cumSum)
-                return i;
+            // Explore: random action
+            return random.Next(actionProbs.Length);
         }
-        return random.Next(actionProbs.Length); // Fallback to random choice
+        else
+        {
+            // Exploit: sample based on probabilities
+            double sample = random.NextDouble();
+            double cumulative = 0;
+
+            for (int i = 0; i < actionProbs.Length; i++)
+            {
+                cumulative += actionProbs[i];
+                if (sample <= cumulative)
+                    return i;
+            }
+
+            return actionProbs.Length - 1; // Fallback
+        }
     }
 
 
@@ -811,7 +824,7 @@ class PPO
         double entropy = entropySum / batchSize;
 
         // Dynamic entropy coefficient - decay over time but maintain minimum exploration
-        ENTROPY_COEF = Math.Max(0.00001, 0.01 * Math.Exp(-0.01 * episodeRewards.Count));
+        ENTROPY_COEF = Math.Max(0.00001, 0.01 * Math.Exp(-0.005 * episodeRewards.Count));
 
         // Track metrics
         policyLosses.Add(policyLoss);

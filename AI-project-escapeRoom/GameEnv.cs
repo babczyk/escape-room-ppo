@@ -17,14 +17,14 @@ class GameEnvironment
     private int currentStep;
     public List<int> PlayerMove;
 
-    public double pick_the_box = 10;
-    public double place_the_box_good = 10;
-    public double finish_reward = 100;
+    public double pick_the_box = 20;
+    public double place_the_box_good = 30;
+    public double finish_reward = 200;
     public double droping_box_bad = -1;
-    public double culide_with_wall = -1;
-    public double repeating_actions = -1;
-    public double time_panalty = -1;
-    public double max_steps_panalty = -10;
+    public double culide_with_wall = -0.5;
+    public double repeating_actions = -0.2;
+    public double time_panalty = -0.1;
+    public double max_steps_panalty = -5;
 
     public GameEnvironment(Game1 game)
     {
@@ -143,7 +143,7 @@ class GameEnvironment
             //Console.WriteLine("Exceeded maximum steps. Penalty: " + max_steps_panalty);
         }
 
-        //Thread.Sleep(200);
+        Thread.Sleep(1);
         return (GetState(), reward, IsDone);
     }
 
