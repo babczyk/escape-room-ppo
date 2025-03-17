@@ -143,7 +143,7 @@ class GameEnvironment
             //Console.WriteLine("Exceeded maximum steps. Penalty: " + max_steps_panalty);
         }
 
-        Thread.Sleep(20);
+        //Thread.Sleep(200);
         return (GetState(), reward, IsDone);
     }
 

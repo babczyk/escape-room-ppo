@@ -33,6 +33,13 @@ class PPO
     private double[] valueOutputWeights;
 
 
+
+    // Bias weights
+    private double[] policyBias1;
+    private double[] policyBias2;
+    private double[] policyBias3;
+    private double[] policyOutputBias;
+
     // Hyperparameters
     private const double GAMMA = 0.99f;
     private const double CLIP_EPSILON = 0.3f;
@@ -81,6 +88,11 @@ class PPO
         valueOutputWeights = InitializeWeights(HIDDEN_LAYER_3_SIZE, 1).Cast<double>().ToArray();
 
         policyWeightsOutput = InitializeWeights(HIDDEN_LAYER_3_SIZE, actionSize);
+
+        policyBias1 = new double[HIDDEN_LAYER_1_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
+        policyBias2 = new double[HIDDEN_LAYER_2_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
+        policyBias3 = new double[HIDDEN_LAYER_3_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
+        policyOutputBias = new double[actionSize].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
 
         // Initialize BatchNorm statistics
         runningMean = new double[stateSize];
@@ -158,7 +170,7 @@ class PPO
     private double[] Softmax(double[] logits)
     {
         double maxLogit = logits.Max(); // Prevents numerical instability
-        double temperature = 2.0; // Adjust exploration
+        double temperature = Math.Max(0.5, 2.0 * Math.Exp(-0.0001 * episodeRewards.Count)); // Slower decay
         double[] expValues = logits.Select(l => Math.Exp((l - maxLogit) / temperature)).ToArray();
         double sumExp = expValues.Sum();
         return expValues.Select(e => e / sumExp).ToArray();
@@ -167,19 +179,14 @@ class PPO
     private double[] PolicyForward(double[] input)
     {
 
-        var layer1 = ReLU(LinearLayer(input, policyWeights1));
-        var layer2 = ReLU(LinearLayer(layer1, policyWeights2));
-        var layer3 = ReLU(LinearLayer(layer2, policyWeights3));
+        var layer1 = ReLU(LinearLayer(input, policyWeights1, policyBias1));
+        var layer2 = ReLU(LinearLayer(layer1, policyWeights2, policyBias2));
+        var layer3 = ReLU(LinearLayer(layer2, policyWeights3, policyBias3));
 
-        var output = LinearLayer(layer3, policyWeightsOutput, policyOutputWeights);
+        var output = LinearLayer(layer3, policyWeightsOutput, policyOutputBias);
 
-        // Softmax scaling fix
-        for (int i = 0; i < output.Length; i++)
-        {
-            output[i] *= 12;
-        }
         var probabilities = Softmax(output);
-
+        //Console.WriteLine($"probabilities: " + string.Join(",", probabilities));
         return probabilities;
     }
     public static double RandomGaussian(double mean = 0.0, double stdDev = 1.0)
@@ -241,6 +248,7 @@ class PPO
             double[] stateVector = state.Select(s => (double)s).ToArray();
             double[] actionProbs = PolicyForward(stateVector);
             int action = SampleAction(actionProbs);
+            Console.WriteLine($"Action:**** {action} ****     ActionProbs: {string.Join(",", actionProbs)}");
             double actionProb = actionProbs[action];
             double valueEstimate = ValueForward(stateVector);
             trajectory.AddStep(stateVector, action, actionProb, valueEstimate);
@@ -295,7 +303,7 @@ class PPO
             // Track metrics
             episodeRewards.Add(totalReward);
             totalRewardInEpisode = totalReward;
-            averageReward = episodeRewards.TakeLast(5).Average(); //take an avrege of 50 episodes (50 generations)
+            averageReward = episodeRewards.TakeLast(5).Average(); //take an avrege of 5 episodes (5 generations)
             // Log progress
             if (episode % 5 == 0)
             {
@@ -318,13 +326,14 @@ class PPO
             {
                 episodesSinceImprovement++;
             }
-
-            // Early stopping
-            if (episode > 50 && averageReward < bestReward * 0.9)
-            {
-                Console.WriteLine("Early stopping triggered - No improvement for 200 episodes");
-                break;
-            }
+            /*
+                        // Early stopping
+                        if (episode > 50 && averageReward < bestReward * 0.9)
+                        {
+                            Console.WriteLine("Early stopping triggered - No improvement for 200 episodes");
+                            break;
+                        }
+                        */
         }
     }
     /// <summary>
@@ -515,28 +524,15 @@ class PPO
     /// <returns>Chosen action index</returns>
     private int SampleAction(double[] actionProbs)
     {
-        double temperature = 1.0; // Start high for exploration, decay over time
-        temperature = Math.Max(0.1, temperature * Math.Exp(-0.0005 * episodeRewards.Count));
-
-        // Apply temperature scaling
-        double[] scaledProbs = actionProbs.Select(p => Math.Pow(p, 1 / temperature)).ToArray();
-
-        // Normalize probabilities
-        double sumScaled = scaledProbs.Sum();
-        double[] finalProbs = scaledProbs.Select(p => p / sumScaled).ToArray();
-
-        // Sample action based on final probabilities
         double sample = random.NextDouble();
         double cumSum = 0;
-
-        for (int i = 0; i < finalProbs.Length; i++)
+        for (int i = 0; i < actionProbs.Length; i++)
         {
-            cumSum += finalProbs[i];
+            cumSum += actionProbs[i];
             if (sample <= cumSum)
                 return i;
         }
-
-        return Array.IndexOf(finalProbs, finalProbs.Max()); // Fallback to the best action
+        return random.Next(actionProbs.Length); // Fallback to random choice
     }
 
 
@@ -547,6 +543,64 @@ class PPO
 
         // Calculate gradients and update value network weights
         UpdateValueNetworkWeights(totalLoss);
+
+        //update bias
+        UpdateBiases(totalLoss);
+
+    }
+    private void UpdateBiases(double loss)
+    {
+        // Learning rate with decay
+        double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
+
+        // Update policy network layer 1
+        for (int i = 0; i < policyBias1.Length; i++)
+        {
+            // Gradient descent update with momentum
+            double gradient = loss * CalculateLayerGradient(policyBias1[i]);
+            double momentum = 0.9 * policyBias1[i];
+            double update = currentLearningRate * (gradient + momentum);
+
+            // Update weight with gradient clipping
+            update = Math.Clamp(update, -5.0, 5.0);
+            policyBias1[i] -= update;
+
+            // Store gradient for momentum
+            //policyWeights1[i, j] = gradient;
+        }
+
+        // Update policy network layer 2
+        for (int i = 0; i < policyBias2.Length; i++)
+        {
+            double gradient = loss * CalculateLayerGradient(policyBias2[i]);
+            double momentum = 0.9 * policyBias2[i];
+            double update = currentLearningRate * (gradient + momentum);
+            update = Math.Clamp(update, -5.0, 5.0);
+            policyBias2[i] -= update;
+            //policyWeights2[i, j] = gradient;
+        }
+
+        // Update policy network layer 3
+        for (int i = 0; i < policyBias3.Length; i++)
+        {
+            double gradient = loss * CalculateLayerGradient(policyBias3[i]);
+            double momentum = 0.9 * policyBias3[i];
+            double update = currentLearningRate * (gradient + momentum);
+            update = Math.Clamp(update, -5.0, 5.0);
+            policyBias3[i] -= update;
+            //policyWeights3[i, j] = gradient;
+        }
+
+        // Update policy output weights
+        for (int i = 0; i < policyOutputBias.Length; i++)
+        {
+            double gradient = loss * CalculateOutputGradient(policyOutputBias[i]);
+            double momentum = 0.9 * policyOutputBias[i];
+            double update = currentLearningRate * (gradient + momentum);
+            update = Math.Clamp(update, -5.0, 5.0);
+            policyOutputBias[i] -= update;
+            //policyOutputWeights[i] = gradient;
+        }
     }
 
     private void UpdatePolicyNetworkWeights(double loss)
@@ -565,7 +619,7 @@ class PPO
                 double update = currentLearningRate * (gradient + momentum);
 
                 // Update weight with gradient clipping
-                update = Math.Clamp(update, -1.0, 1.0);
+                update = Math.Clamp(update, -5.0, 5.0);
                 policyWeights1[i, j] -= update;
 
                 // Store gradient for momentum
@@ -581,7 +635,7 @@ class PPO
                 double gradient = loss * CalculateLayerGradient(policyWeights2[i, j]);
                 double momentum = 0.9 * policyWeights2[i, j];
                 double update = currentLearningRate * (gradient + momentum);
-                update = Math.Clamp(update, -1.0, 1.0);
+                update = Math.Clamp(update, -5.0, 5.0);
                 policyWeights2[i, j] -= update;
                 //policyWeights2[i, j] = gradient;
             }
@@ -595,7 +649,7 @@ class PPO
                 double gradient = loss * CalculateLayerGradient(policyWeights3[i, j]);
                 double momentum = 0.9 * policyWeights3[i, j];
                 double update = currentLearningRate * (gradient + momentum);
-                update = Math.Clamp(update, -1.0, 1.0);
+                update = Math.Clamp(update, -5.0, 5.0);
                 policyWeights3[i, j] -= update;
                 //policyWeights3[i, j] = gradient;
             }
@@ -607,7 +661,7 @@ class PPO
             double gradient = loss * CalculateOutputGradient(policyOutputWeights[i]);
             double momentum = 0.9 * policyOutputWeights[i];
             double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -1.0, 1.0);
+            update = Math.Clamp(update, -5.0, 5.0);
             policyOutputWeights[i] -= update;
             //policyOutputWeights[i] = gradient;
         }
@@ -634,7 +688,7 @@ class PPO
                 double update = currentLearningRate * (gradient + momentum);
 
                 // Apply gradient clipping
-                update = Math.Clamp(update, -1.0, 1.0);
+                update = Math.Clamp(update, -5.0, 5.0);
 
                 // Update weights
                 valueWeights1[i, j] -= update;
@@ -652,7 +706,7 @@ class PPO
                 double gradient = loss * CalculateLayerGradient(valueWeights2[i, j]);
                 double momentum = 0.9 * valueWeights2[i, j];
                 double update = currentLearningRate * (gradient + momentum);
-                update = Math.Clamp(update, -1.0, 1.0);
+                update = Math.Clamp(update, -5.0, 5.0);
                 valueWeights2[i, j] -= update;
                 //valueWeights2[i, j] = gradient;
             }
@@ -666,7 +720,7 @@ class PPO
                 double gradient = loss * CalculateLayerGradient(valueWeights3[i, j]);
                 double momentum = 0.9 * valueWeights3[i, j];
                 double update = currentLearningRate * (gradient + momentum);
-                update = Math.Clamp(update, -1.0, 1.0);
+                update = Math.Clamp(update, -5.0, 5.0);
                 valueWeights3[i, j] -= update;
                 //valueWeights3[i, j] = gradient;
             }
@@ -678,7 +732,7 @@ class PPO
             double gradient = loss * CalculateOutputGradient(valueOutputWeights[i]);
             double momentum = 0.9 * valueOutputWeights[i];
             double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -1.0, 1.0);
+            update = Math.Clamp(update, -5.0, 5.0);
             valueOutputWeights[i] -= update;
             //valueOutputWeights[i] = gradient;
         }
@@ -723,7 +777,7 @@ class PPO
         foreach (int idx in batchIndices)
         {
             var currentProbs = PolicyForward(trajectory.states[idx]);
-            double ratio = currentProbs[trajectory.actions[idx]] / trajectory.oldActionProbs[idx];
+            double ratio = currentProbs[trajectory.actions[idx]];
 
             // Policy loss with clipping
             double advantage = trajectory.advantages[idx];
@@ -754,7 +808,7 @@ class PPO
         double entropy = entropySum / batchSize;
 
         // Dynamic entropy coefficient - decay over time but maintain minimum exploration
-        ENTROPY_COEF = Math.Max(0.001, 0.01 * Math.Exp(-episodeRewards.Count * 0.0001));
+        ENTROPY_COEF = Math.Max(0.00001, 0.01 * Math.Exp(-0.01 * episodeRewards.Count));
 
         // Track metrics
         policyLosses.Add(policyLoss);
