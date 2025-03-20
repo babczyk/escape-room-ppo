@@ -18,8 +18,8 @@ class PPO
 
     // Neural network architecture
     private const int HIDDEN_LAYER_1_SIZE = 128;
-    private const int HIDDEN_LAYER_2_SIZE = 64;
-    private const int HIDDEN_LAYER_3_SIZE = 32;
+    private const int HIDDEN_LAYER_2_SIZE = 128;
+    private const int HIDDEN_LAYER_3_SIZE = 64;
 
     // Network weights
     private double[,] policyWeights1;
@@ -40,14 +40,19 @@ class PPO
     private double[] policyBias3;
     private double[] policyOutputBias;
 
+    private double[] valueBias1;
+    private double[] valueBias2;
+    private double[] valueBias3;
+    private double[] valueOutputBias;
+
     // Hyperparameters
     private const double GAMMA = 0.99f;
-    private const double CLIP_EPSILON = 0.3f;
-    private const double LEARNING_RATE = 0.01f;
+    private const double CLIP_EPSILON = 0.2f;
+    private const double LEARNING_RATE = 0.001f;
     private const int EPOCHS = 6;
-    private double ENTROPY_COEF = 0.01f; // Made non-constant to allow decay
+    private double ENTROPY_COEF = 0.05f; // Made non-constant to allow decay
     private const double VALUE_COEF = 0.3f;
-    private const int BATCH_SIZE = 64;
+    private const int BATCH_SIZE = 128;
 
     // Training metrics
     public List<double> episodeRewards;
@@ -56,13 +61,23 @@ class PPO
     private List<double> entropyValues;
 
     // BatchNorm running statistics
-    private double[] runningMean;
-    private double[] runningVar;
+    private double[][] batchNormGamma; // Scale parameters
+    private double[][] batchNormBeta;  // Shift parameters
+    private double[] runningMean;      // Running means for each layer
+    private double[] runningVar;       // Running variances for each layer
     private const double MOMENTUM = 0.99;
+
+    // BatchNorm parameters for value network
+    private double[][] valueBatchNormGamma; // Scale parameters
+    private double[][] valueBatchNormBeta;  // Shift parameters
+    private double[] valueRunningMean;      // Running means for each layer
+    private double[] valueRunningVar;       // Running variances for each layer
 
     private Random random;
     private int stateSize;
     private int actionSize;
+
+
 
 
     /// <summary>
@@ -94,6 +109,11 @@ class PPO
         policyBias3 = new double[HIDDEN_LAYER_3_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
         policyOutputBias = new double[actionSize].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
 
+        valueBias1 = new double[HIDDEN_LAYER_1_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
+        valueBias2 = new double[HIDDEN_LAYER_2_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
+        valueBias3 = new double[HIDDEN_LAYER_3_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
+        valueOutputBias = new double[1].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
+
         // Initialize BatchNorm statistics
         runningMean = new double[stateSize];
         runningVar = new double[stateSize];
@@ -107,6 +127,58 @@ class PPO
         policyLosses = new List<double>();
         valueLosses = new List<double>();
         entropyValues = new List<double>();
+
+        // Initialize BatchNorm parameters
+        batchNormGamma = new double[3][];
+        batchNormBeta = new double[3][];
+        runningMean = new double[3];
+        runningVar = new double[3];
+
+        // For each layer
+        for (int i = 0; i < 3; i++)
+        {
+            int layerSize = (i == 0) ? HIDDEN_LAYER_1_SIZE :
+                           (i == 1) ? HIDDEN_LAYER_2_SIZE : HIDDEN_LAYER_3_SIZE;
+
+            batchNormGamma[i] = new double[layerSize];
+            batchNormBeta[i] = new double[layerSize];
+
+            // Initialize gamma to 1s and beta to 0s
+            for (int j = 0; j < layerSize; j++)
+            {
+                batchNormGamma[i][j] = 1.0;
+                batchNormBeta[i][j] = 0.0;
+            }
+
+            runningMean[i] = 0.0;
+            runningVar[i] = 1.0;
+        }
+
+        // Initialize BatchNorm parameters for value network
+        valueBatchNormGamma = new double[3][];
+        valueBatchNormBeta = new double[3][];
+        valueRunningMean = new double[3];
+        valueRunningVar = new double[3];
+
+        // For each layer
+        for (int i = 0; i < 3; i++)
+        {
+            int layerSize = (i == 0) ? HIDDEN_LAYER_1_SIZE :
+                           (i == 1) ? HIDDEN_LAYER_2_SIZE : HIDDEN_LAYER_3_SIZE;
+
+            valueBatchNormGamma[i] = new double[layerSize];
+            valueBatchNormBeta[i] = new double[layerSize];
+
+            // Initialize gamma to 1s and beta to 0s
+            for (int j = 0; j < layerSize; j++)
+            {
+                valueBatchNormGamma[i][j] = 1.0;
+                valueBatchNormBeta[i][j] = 0.0;
+            }
+
+            valueRunningMean[i] = 0.0;
+            valueRunningVar[i] = 1.0;
+        }
     }
 
     /// <summary>
@@ -176,20 +248,87 @@ class PPO
         return expValues.Select(e => e / sumExp).ToArray();
     }
 
-    private double[] PolicyForward(double[] input)
+    private double[] PolicyForward(double[] input, bool isTraining = true)
     {
+        // First layer
+        var z1 = LinearLayer(input, policyWeights1, policyBias1);
+        var bn1 = BatchNormalize(z1, 0, isTraining); // Layer index 0
+        var layer1 = ReLU(bn1);
 
-        var layer1 = ReLU(LinearLayer(input, policyWeights1, policyBias1));
-        var layer2 = ReLU(LinearLayer(layer1, policyWeights2, policyBias2));
-        var layer3 = ReLU(LinearLayer(layer2, policyWeights3, policyBias3));
+        // Second layer
+        var z2 = LinearLayer(layer1, policyWeights2, policyBias2);
+        var bn2 = BatchNormalize(z2, 1, isTraining); // Layer index 1
+        var layer2 = ReLU(bn2);
 
+        // Third layer
+        var z3 = LinearLayer(layer2, policyWeights3, policyBias3);
+        var bn3 = BatchNormalize(z3, 2, isTraining); // Layer index 2
+        var layer3 = ReLU(bn3);
+
+        // Output layer - typically no BatchNorm on output layer
         var output = LinearLayer(layer3, policyWeightsOutput, policyOutputBias);
+
+        // You may want to reduce this scaling factor - 1000 is very high
         for (int i = 0; i < output.Length; i++)
         {
-            output[i] *= 1000; // Amplify logits to prevent uniform softmax
+            output[i] *= 10; // More reasonable scaling
         }
+
         var probabilities = Softmax(output);
         return probabilities;
+    }
+
+    // BatchNormalize implementation
+    private double[] BatchNormalize(double[] layer, int layerIndex, bool isTraining)
+    {
+        int layerSize = layer.Length;
+        double[] normalized = new double[layerSize];
+
+        // Parameters for this layer (you need to add these to your class)
+        double[] gamma = batchNormGamma[layerIndex]; // Scale parameter (initialized to 1s)
+        double[] beta = batchNormBeta[layerIndex];   // Shift parameter (initialized to 0s)
+
+        // Calculate batch statistics
+        double mean = 0, variance = 0;
+
+        if (isTraining)
+        {
+            // Compute mean
+            for (int i = 0; i < layerSize; i++)
+            {
+                mean += layer[i];
+            }
+            mean /= layerSize;
+
+            // Compute variance
+            for (int i = 0; i < layerSize; i++)
+            {
+                double diff = layer[i] - mean;
+                variance += diff * diff;
+            }
+            variance /= layerSize;
+
+            // Update running statistics for inference
+            runningMean[layerIndex] = MOMENTUM * runningMean[layerIndex] + (1 - MOMENTUM) * mean;
+            runningVar[layerIndex] = MOMENTUM * runningVar[layerIndex] + (1 - MOMENTUM) * variance;
+        }
+        else
+        {
+            // Use running statistics during inference
+            mean = runningMean[layerIndex];
+            variance = runningVar[layerIndex];
+        }
+
+        // Small constant to avoid division by zero
+        double epsilon = 1e-5;
+
+        // Normalize and apply scale and shift
+        for (int i = 0; i < layerSize; i++)
+        {
+            normalized[i] = gamma[i] * ((layer[i] - mean) / Math.Sqrt(variance + epsilon)) + beta[i];
+        }
+
+        return normalized;
     }
     public static double RandomGaussian(double mean = 0.0, double stdDev = 1.0)
     {
@@ -229,13 +368,79 @@ class PPO
         return advantages;
     }
 
-    private double ValueForward(double[] input)
+    private double ValueForward(double[] input, bool isTraining = true)
     {
-        var layer1 = ReLU(LinearLayer(input, valueWeights1));
-        var layer2 = ReLU(LinearLayer(layer1, valueWeights2));
-        var layer3 = ReLU(LinearLayer(layer2, valueWeights3));
+        // First layer
+        var z1 = LinearLayer(input, valueWeights1, valueBias1);
+        var bn1 = BatchNormalizeValue(z1, 0, isTraining); // Layer index 0
+        var layer1 = ReLU(bn1);
+
+        // Second layer
+        var z2 = LinearLayer(layer1, valueWeights2, valueBias2);
+        var bn2 = BatchNormalizeValue(z2, 1, isTraining); // Layer index 1
+        var layer2 = ReLU(bn2);
+
+        // Third layer
+        var z3 = LinearLayer(layer2, valueWeights3, valueBias3);
+        var bn3 = BatchNormalizeValue(z3, 2, isTraining); // Layer index 2
+        var layer3 = ReLU(bn3);
+
+        // Output layer - typically no BatchNorm on output layer for value function
         var output = LinearLayer(layer3, valueWeightsOutput, valueOutputWeights);
-        return output[0];
+        return output[0];  // Single value output
+    }
+
+    // BatchNormalize implementation for value network
+    private double[] BatchNormalizeValue(double[] layer, int layerIndex, bool isTraining)
+    {
+        int layerSize = layer.Length;
+        double[] normalized = new double[layerSize];
+
+        // Parameters for this layer
+        double[] gamma = valueBatchNormGamma[layerIndex]; // Scale parameter
+        double[] beta = valueBatchNormBeta[layerIndex];   // Shift parameter
+
+        // Calculate batch statistics
+        double mean = 0, variance = 0;
+
+        if (isTraining)
+        {
+            // Compute mean
+            for (int i = 0; i < layerSize; i++)
+            {
+                mean += layer[i];
+            }
+            mean /= layerSize;
+
+            // Compute variance
+            for (int i = 0; i < layerSize; i++)
+            {
+                double diff = layer[i] - mean;
+                variance += diff * diff;
+            }
+            variance /= layerSize;
+
+            // Update running statistics for inference
+            valueRunningMean[layerIndex] = MOMENTUM * valueRunningMean[layerIndex] + (1 - MOMENTUM) * mean;
+            valueRunningVar[layerIndex] = MOMENTUM * valueRunningVar[layerIndex] + (1 - MOMENTUM) * variance;
+        }
+        else
+        {
+            // Use running statistics during inference
+            mean = valueRunningMean[layerIndex];
+            variance = valueRunningVar[layerIndex];
+        }
+
+        // Small constant to avoid division by zero
+        double epsilon = 1e-5;
+
+        // Normalize and apply scale and shift
+        for (int i = 0; i < layerSize; i++)
+        {
+            normalized[i] = gamma[i] * ((layer[i] - mean) / Math.Sqrt(variance + epsilon)) + beta[i];
+        }
+
+        return normalized;
     }
 
     private (TrajectoryData trajectory, double totalReward) CollectTrajectory(GameEnvironment env)
@@ -525,30 +730,75 @@ class PPO
     /// </summary>
     /// <param name="actionProbs">Probability distribution over actions</param>
     /// <returns>Chosen action index</returns>
-    private int SampleAction(double[] actionProbs)
+    private int SampleAction(double[] actionProbs, bool isTraining = true)
     {
-        double epsilon = Math.Max(0.1, 1.0 * Math.Exp(-0.001 * episodeRewards.Count)); // Decay exploration over time
-
-        if (random.NextDouble() < epsilon)
+        // Only apply epsilon-greedy during training
+        if (isTraining)
         {
-            // Explore: random action
-            return random.Next(actionProbs.Length);
-        }
-        else
-        {
-            // Exploit: sample based on probabilities
-            double sample = random.NextDouble();
-            double cumulative = 0;
+            // Improved decay schedule - more gradual decay
+            double epsilon = Math.Max(0.05, 0.3 * Math.Exp(-0.0005 * episodeRewards.Count));
 
-            for (int i = 0; i < actionProbs.Length; i++)
+            if (random.NextDouble() < epsilon)
             {
-                cumulative += actionProbs[i];
-                if (sample <= cumulative)
-                    return i;
-            }
+                // Use weighted random exploration instead of uniform random
+                if (random.NextDouble() < 0.7) // 70% of exploration is weighted
+                {
+                    // Softmax temperature for exploration (higher temperature = more uniform)
+                    double[] explorationProbs = new double[actionProbs.Length];
+                    double temperature = 2.0; // Higher than 1.0 to flatten distribution
 
-            return actionProbs.Length - 1; // Fallback
+                    double sum = 0;
+                    for (int i = 0; i < actionProbs.Length; i++)
+                    {
+                        explorationProbs[i] = Math.Pow(actionProbs[i], 1 / temperature);
+                        sum += explorationProbs[i];
+                    }
+
+                    // Normalize
+                    for (int i = 0; i < actionProbs.Length; i++)
+                    {
+                        explorationProbs[i] /= sum;
+                    }
+
+                    // Sample from modified distribution
+                    double sample = random.NextDouble();
+                    double cumulative = 0;
+                    for (int i = 0; i < explorationProbs.Length; i++)
+                    {
+                        cumulative += explorationProbs[i];
+                        if (sample <= cumulative)
+                            return i;
+                    }
+                }
+
+                // Pure random exploration (30% of exploration)
+                return random.Next(actionProbs.Length);
+            }
         }
+
+        // Exploit: sample based on probabilities
+        double exploitSample = random.NextDouble();
+        double exploitCumulative = 0;
+
+        for (int i = 0; i < actionProbs.Length; i++)
+        {
+            exploitCumulative += actionProbs[i];
+            if (exploitSample <= exploitCumulative)
+                return i;
+        }
+
+        // Fallback to most probable action instead of last action
+        int bestAction = 0;
+        double bestProb = actionProbs[0];
+        for (int i = 1; i < actionProbs.Length; i++)
+        {
+            if (actionProbs[i] > bestProb)
+            {
+                bestProb = actionProbs[i];
+                bestAction = i;
+            }
+        }
+        return bestAction;
     }
 
 
