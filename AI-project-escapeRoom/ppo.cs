@@ -189,7 +189,6 @@ class PPO
             output[i] *= 1000; // Amplify logits to prevent uniform softmax
         }
         var probabilities = Softmax(output);
-        //Console.WriteLine($"probabilities: " + string.Join(",", probabilities));
         return probabilities;
     }
     public static double RandomGaussian(double mean = 0.0, double stdDev = 1.0)
@@ -251,7 +250,6 @@ class PPO
             double[] stateVector = state.Select(s => (double)s).ToArray();
             double[] actionProbs = PolicyForward(stateVector);
             int action = SampleAction(actionProbs);
-            //Console.WriteLine($"Action:**** {action} ****     ActionProbs: {string.Join(",", actionProbs)}");
             double actionProb = actionProbs[action];
             double valueEstimate = ValueForward(stateVector);
             trajectory.AddStep(stateVector, action, actionProb, valueEstimate);
@@ -328,14 +326,6 @@ class PPO
             {
                 episodesSinceImprovement++;
             }
-            /*
-                        // Early stopping
-                        if (episode > 50 && averageReward < bestReward * 0.9)
-                        {
-                            Console.WriteLine("Early stopping triggered - No improvement for 200 episodes");
-                            break;
-                        }
-                        */
         }
     }
     /// <summary>
@@ -830,7 +820,6 @@ class PPO
         int batchSize = batchIndices.Count;
         policyLoss /= batchSize;
         valueLoss /= batchSize;
-        //Console.WriteLine($"entropy setings: {entropySum} {batchSize}");
         double entropy = entropySum / batchSize;
 
         // Dynamic entropy coefficient - decay over time but maintain minimum exploration

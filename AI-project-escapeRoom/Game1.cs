@@ -317,7 +317,11 @@ namespace AI_project_escapeRoom
 
                 Thread.Sleep(100);
             }
-
+            if (player.heldBox != null)
+            {
+                previousBoxState = true;
+            }
+            else previousBoxState = false;
             base.Update(gameTime);
         }
 
