@@ -282,7 +282,6 @@ class PPO
             var progress = LoadProgress(progressPath);
             episode = progress.episode;
             bestReward = progress.bestReward;
-            LoadModel(modelPath);
         }
         for (; episode < episodes; episode++)
         {
@@ -411,7 +410,7 @@ class PPO
     /// <param name="filePath"></param>
     /// <returns></returns>
     /// <exception cref="InvalidOperationException"></exception>
-    public (int episode, double bestReward, List<int> recentRewards) LoadProgress(string filePath)
+    public (int episode, double bestReward, List<double> recentRewards) LoadProgress(string filePath)
     {
         string json = File.ReadAllText(filePath);
         var progress = JsonSerializer.Deserialize<JsonElement>(json);
@@ -436,7 +435,7 @@ class PPO
         var bestReward = progress.GetProperty("BestReward").GetDouble();
         var recentRewards = progress.GetProperty("RecentRewards")
                                     .EnumerateArray()
-                                    .Select(e => e.GetInt32())
+                                    .Select(e => e.GetDouble())
                                     .ToList();
 
         return (episodeA, bestReward, recentRewards);
