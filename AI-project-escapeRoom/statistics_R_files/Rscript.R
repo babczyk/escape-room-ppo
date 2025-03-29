@@ -32,7 +32,7 @@ heatmap_plot <- ggplot(policy_df, aes(Var1, Var2, fill = value)) +
 # 🔥 Plot 2: Training Progress
 reward_plot <- ggplot(
   data.frame(
-    Episode = 1:seq_along(model$RecentRewards),
+    Episode = seq_along(model$RecentRewards),
     Reward = model$RecentRewards
   ),
   aes(x = Episode, y = Reward)

@@ -510,8 +510,9 @@ class PPO
                 valueWeightsOutput = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE_WEIGHTS_OUTPUT"));
 
                 // Load BatchNorm statistics
-                runningMean = helper.SafeDeserialize1D(root, "RUNNING_MEAN");
-                runningVar = helper.SafeDeserialize1D(root, "RUNNING_VAR");
+                runningMean = helper.SafeDeserialize1D(root, "VALUE_RUNNING_MEAN");
+                runningVar = helper.SafeDeserialize1D(root, "VALUE_RUNNING_VAR");
+                Console.WriteLine($"Running Mean: {string.Join(", ", runningMean)}");
             }
 
             Console.WriteLine($"Model successfully loaded from {filePath}");
