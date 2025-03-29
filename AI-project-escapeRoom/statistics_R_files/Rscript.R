@@ -9,9 +9,6 @@ library(gridExtra)
 library(jsonlite)
 library(reshape2)
 
-# Declare global variables to avoid 'no visible binding' warnings
-utils::globalVariables(c("Var1", "Var2", "value", "variable"))
-
 # Load JSON data from PPO model and progress
 prog <- fromJSON("C://Users/ronin/OneDrive/Desktop/stuff/escapeRoomAi/PG_MAIN/AI-project-escapeRoom/bin/Debug/net8.0/ppo_prog.json") # nolint
 save(prog, file = "C://Users/ronin/OneDrive/Desktop/stuff/escapeRoomAi/PG_MAIN/AI-project-escapeRoom/bin/Debug/net8.0/ppo_prog.RData") # nolint
@@ -24,7 +21,7 @@ load("C://Users/ronin/OneDrive/Desktop/stuff/escapeRoomAi/PG_MAIN/AI-project-esc
 # Helper function to create heatmaps
 plot_heatmap <- function(weight_matrix, title) {
   weight_df <- melt(as.matrix(weight_matrix))
-  ggplot(weight_df, aes(Var1, Var2, fill = value)) +
+  ggplot(weight_df, aes(Var1, Var2, fill = value)) + # nolint
     geom_tile() +
     scale_fill_gradient(low = "blue", high = "red") +
     theme_minimal() +
