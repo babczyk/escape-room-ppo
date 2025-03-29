@@ -166,25 +166,26 @@ class PPO
         // First layer
         var z1 = helper.LinearLayer(input, policyWeights1, policyBias1);
         var bn1 = BatchNormalize(z1, 0, isTraining); // Layer index 0
-        var layer1 = helper.LeakyReLU(bn1);
+        var layer1 = helper.ELU(bn1);
 
         // Second layer
         var z2 = helper.LinearLayer(layer1, policyWeights2, policyBias2);
         var bn2 = BatchNormalize(z2, 1, isTraining); // Layer index 1
-        var layer2 = helper.LeakyReLU(bn2);
+        var layer2 = helper.ELU(bn2);
 
         // Third layer
         var z3 = helper.LinearLayer(layer2, policyWeights3, policyBias3);
         var bn3 = BatchNormalize(z3, 2, isTraining); // Layer index 2
-        var layer3 = helper.LeakyReLU(bn3);
+        var layer3 = helper.ELU(bn3);
 
         // Output layer - typically no BatchNorm on output layer
         var output = helper.LinearLayer(layer3, policyWeightsOutput, policyOutputBias);
 
-        // You may want to reduce this scaling factor - 1000 is very high
+        double maxLogit = output.Max();
         for (int i = 0; i < output.Length; i++)
         {
-            output[i] *= 2; // More reasonable scaling
+            output[i] -= maxLogit;
+            output[i] /= 0.8;  // Lower temperature for more confidence
         }
 
         var probabilities = helper.Softmax(output);
@@ -447,7 +448,7 @@ class PPO
             // Track metrics
             episodeRewards.Add(totalReward);
             totalRewardInEpisode = totalReward;
-            averageReward = episodeRewards.TakeLast(5).Average(); //take an avrege of 5 episodes (5 generations)
+            averageReward = episodeRewards.TakeLast(50).Average(); //take an avrege of 50 episodes (50 generations)
             // Log progress
             if (episode % 5 == 0)
             {
@@ -620,11 +621,17 @@ class PPO
     /// <param name="recentRewards"></param>
     public void SaveProgress(string filePath, int episode, double bestReward, List<double> recentRewards)
     {
+        var exsistingJson = File.ReadAllText(filePath);
+        var existingProgress = JsonSerializer.Deserialize<JsonElement>(exsistingJson);
         var progress = new
         {
             Episode = episode,
-            BestReward = bestReward,
-            RecentRewards = recentRewards
+            BestReward = existingProgress.GetProperty("BestReward").GetDouble() < bestReward ? bestReward : existingProgress.GetProperty("BestReward").GetDouble(),
+            RecentRewards = existingProgress.GetProperty("RecentRewards").EnumerateArray()
+                                            .Select(e => e.GetDouble())
+                                            .ToList()
+                                            .Concat(recentRewards)
+                                            .ToList()
         };
         var json = JsonSerializer.Serialize(progress);
         File.WriteAllText(filePath, json);
@@ -885,7 +892,12 @@ class PPO
         double entropy = entropySum / batchSize;
 
         // Dynamic entropy coefficient - decay over time but maintain minimum exploration
-        ENTROPY_COEF = Math.Max(0.0001, ENTROPY_COEF * 0.995);
+        if (entropy > 1.5)
+            ENTROPY_COEF *= 0.99;  // Faster decay if too high
+        else
+            ENTROPY_COEF *= 0.999; // Slower decay if already low
+
+        ENTROPY_COEF = Math.Max(0.0001, ENTROPY_COEF);
 
         // Track metrics
         policyLosses.Add(policyLoss);

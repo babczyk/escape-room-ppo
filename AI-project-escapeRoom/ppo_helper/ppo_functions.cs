@@ -65,6 +65,11 @@ class PPOHelper
         return input.Select(x => x > 0 ? x : alpha * x).ToArray();
     }
 
+    public double[] ELU(double[] input, double alpha = 1.0)
+    {
+        return input.Select(x => (x > 0) ? x : alpha * (Math.Exp(x) - 1)).ToArray();
+    }
+
     /// <summary>
     /// Applies the softmax function to convert logits to probabilities.
     /// </summary>
