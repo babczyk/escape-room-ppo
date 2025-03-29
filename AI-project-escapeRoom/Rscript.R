@@ -2,7 +2,7 @@ install.packages("jsonlite")
 library(jsonlite)
 
 prog <- fromJSON("C://Users/ronin/OneDrive/Desktop/stuff/escapeRoomAi/PG_MAIN/AI-project-escapeRoom/bin/Debug/net8.0/ppo_prog.json") # nolint
-save(model, file = "C://Users/ronin/OneDrive/Desktop/stuff/escapeRoomAi/PG_MAIN/AI-project-escapeRoom/bin/Debug/net8.0/ppo_prog.RData") # nolint
+save(prog, file = "C://Users/ronin/OneDrive/Desktop/stuff/escapeRoomAi/PG_MAIN/AI-project-escapeRoom/bin/Debug/net8.0/ppo_prog.RData") # nolint
 load("C:\\Users\\ronin\\OneDrive\\Desktop\\stuff\\escapeRoomAi\\PG_MAIN\\AI-project-escapeRoom\\bin\\Debug\\net8.0\\ppo_prog.RData") # nolint
 
 model <- fromJSON("C://Users/ronin/OneDrive/Desktop/stuff/escapeRoomAi/PG_MAIN/AI-project-escapeRoom/bin/Debug/net8.0/ppo_model.json") # nolint
