@@ -1,7 +1,7 @@
 using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
-public class GameObject
+public abstract class GameObject
 {
     public Vector2 Position { get; set; }
     public Vector2 Velocity { get; set; }
