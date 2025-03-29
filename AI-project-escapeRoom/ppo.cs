@@ -25,12 +25,10 @@ class PPO
     private double[,] policyWeights1;
     private double[,] policyWeights2;
     private double[,] policyWeights3;
-    private double[] policyOutputWeights;
     private double[,] policyWeightsOutput;
     private double[,] valueWeights1;
     private double[,] valueWeights2;
     private double[,] valueWeights3;
-    private double[] valueOutputWeights;
     private double[,] valueWeightsOutput;
 
 
@@ -92,15 +90,13 @@ class PPO
         policyWeights1 = helper.InitializeWeights(stateSize, HIDDEN_LAYER_1_SIZE);
         policyWeights2 = helper.InitializeWeights(HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE);
         policyWeights3 = helper.InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
-        policyOutputWeights = helper.InitializeWeights(HIDDEN_LAYER_3_SIZE, actionSize).Cast<double>().ToArray();
+        policyWeightsOutput = helper.InitializeWeights(HIDDEN_LAYER_3_SIZE, actionSize);
 
         // Initialize value network
         valueWeights1 = helper.InitializeWeights(stateSize, HIDDEN_LAYER_1_SIZE);
         valueWeights2 = helper.InitializeWeights(HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE);
         valueWeights3 = helper.InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
-        valueOutputWeights = helper.InitializeWeights(HIDDEN_LAYER_3_SIZE, 1).Cast<double>().ToArray();
         valueWeightsOutput = helper.InitializeWeights(HIDDEN_LAYER_3_SIZE, 1);
-        policyWeightsOutput = helper.InitializeWeights(HIDDEN_LAYER_3_SIZE, actionSize);
 
         // Bias initialization (small random values)
         policyBias1 = new double[HIDDEN_LAYER_1_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
@@ -151,9 +147,9 @@ class PPO
             for (int j = 0; j < layerSize; j++)
             {
                 batchNormGamma[i][j] = 0.5;   // Less aggressive than 1.0
-                batchNormBeta[i][j] = 0.01;   // Small shift
+                batchNormBeta[i][j] = 0.0;   // Small shift
 
-                valueBatchNormGamma[i][j] = 1.0;
+                valueBatchNormGamma[i][j] = 0.5;
                 valueBatchNormBeta[i][j] = 0.0;
             }
         }
@@ -188,7 +184,7 @@ class PPO
         // You may want to reduce this scaling factor - 1000 is very high
         for (int i = 0; i < output.Length; i++)
         {
-            output[i] *= 10; // More reasonable scaling
+            output[i] *= 2; // More reasonable scaling
         }
 
         var probabilities = helper.Softmax(output);
@@ -309,7 +305,7 @@ class PPO
         var layer3 = helper.LeakyReLU(bn3);
 
         // Output layer - typically no BatchNorm on output layer for value function
-        var output = helper.LinearLayer(layer3, valueWeightsOutput, valueOutputWeights);
+        var output = helper.LinearLayer(layer3, valueWeightsOutput, valueOutputBias);
         return output[0];  // Single value output
     }
 
@@ -501,7 +497,6 @@ class PPO
                 // Load policy network weights
                 policyWeights2 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "POLICY2"));
                 policyWeights3 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "POLICY3"));
-                policyOutputWeights = helper.SafeDeserialize1D(root, "POLICY_OUTPUT");
                 policyWeightsOutput = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "POLICY_WEIGHTS_OUTPUT"));
                 policyBias1 = helper.SafeDeserialize1D(root, "POLICY_BIAS1");
                 policyBias2 = helper.SafeDeserialize1D(root, "POLICY_BIAS2");
@@ -512,7 +507,6 @@ class PPO
                 valueWeights1 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE1"));
                 valueWeights2 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE2"));
                 valueWeights3 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE3"));
-                valueOutputWeights = helper.SafeDeserialize1D(root, "VALUE_OUTPUT");
                 valueWeightsOutput = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE_WEIGHTS_OUTPUT"));
 
                 // Load BatchNorm statistics
@@ -582,7 +576,6 @@ class PPO
             POLICY1 = helper.ConvertToJaggedArray(policyWeights1),
             POLICY2 = helper.ConvertToJaggedArray(policyWeights2),
             POLICY3 = helper.ConvertToJaggedArray(policyWeights3),
-            POLICY_OUTPUT = policyOutputWeights,
             POLICY_WEIGHTS_OUTPUT = helper.ConvertToJaggedArray(policyWeightsOutput),
             POLICY_BIAS1 = policyBias1,
             POLICY_BIAS2 = policyBias2,
@@ -593,12 +586,23 @@ class PPO
             VALUE1 = helper.ConvertToJaggedArray(valueWeights1),
             VALUE2 = helper.ConvertToJaggedArray(valueWeights2),
             VALUE3 = helper.ConvertToJaggedArray(valueWeights3),
-            VALUE_OUTPUT = valueOutputWeights,
             VALUE_WEIGHTS_OUTPUT = helper.ConvertToJaggedArray(valueWeightsOutput),
 
             // BatchNorm statistics
-            RUNNING_MEAN = runningMean,
-            RUNNING_VAR = runningVar
+            VALUE_BIAS1 = valueBias1,
+            VALUE_BIAS2 = valueBias2,
+            VALUE_BIAS3 = valueBias3,
+            VALUE_OUTPUT_BIAS = valueOutputBias,
+
+            // Add batch norm parameters
+            POLICY_BATCH_NORM_GAMMA = batchNormGamma,
+            POLICY_BATCH_NORM_BETA = batchNormBeta,
+            VALUE_BATCH_NORM_GAMMA = valueBatchNormGamma,
+            VALUE_BATCH_NORM_BETA = valueBatchNormBeta,
+
+            // Add value network running stats
+            VALUE_RUNNING_MEAN = valueRunningMean,
+            VALUE_RUNNING_VAR = valueRunningVar
         };
 
         string json = JsonSerializer.Serialize(model, new JsonSerializerOptions { WriteIndented = true });
@@ -746,14 +750,16 @@ class PPO
         }
 
         // Update policy output weights
-        for (int i = 0; i < policyOutputWeights.Length; i++)
+        for (int i = 0; i < policyWeightsOutput.GetLength(0); i++)
         {
-            double gradient = loss * helper.CalculateOutputGradient(policyOutputWeights[i]);
-            double momentum = 0.9 * policyOutputWeights[i];
-            double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -1.0, 1.0);
-            policyOutputWeights[i] -= update;
-            //policyOutputWeights[i] = gradient;
+            for (int j = 0; j < policyWeightsOutput.GetLength(1); j++)
+            {
+                double gradient = loss * helper.CalculateOutputGradient(policyWeightsOutput[i, j]);
+                double momentum = 0.9 * policyWeightsOutput[i, j];
+                double update = currentLearningRate * (gradient + momentum);
+                update = Math.Clamp(update, -1.0, 1.0);
+                policyWeightsOutput[i, j] -= update;
+            }
         }
     }
 
@@ -817,14 +823,16 @@ class PPO
         }
 
         // Update value output weights
-        for (int i = 0; i < valueOutputWeights.Length; i++)
+        for (int i = 0; i < valueWeightsOutput.GetLength(0); i++)
         {
-            double gradient = loss * helper.CalculateOutputGradient(valueOutputWeights[i]);
-            double momentum = 0.9 * valueOutputWeights[i];
-            double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -1.0, 1.0);
-            valueOutputWeights[i] -= update;
-            //valueOutputWeights[i] = gradient;
+            for (int j = 0; j < valueWeightsOutput.GetLength(1); j++)
+            {
+                double gradient = loss * helper.CalculateOutputGradient(valueWeightsOutput[i, j]);
+                double momentum = 0.9 * valueWeightsOutput[i, j];
+                double update = currentLearningRate * (gradient + momentum);
+                update = Math.Clamp(update, -1.0, 1.0);
+                valueWeightsOutput[i, j] -= update;
+            }
         }
     }
 
@@ -852,7 +860,7 @@ class PPO
             double advantage = trajectory.advantages[idx];
             double unclippedLoss = ratio * advantage;
             double clippedLoss = Math.Clamp(ratio, 1 - CLIP_EPSILON, 1 + CLIP_EPSILON) * advantage;
-            policyLoss = -Math.Min(unclippedLoss, clippedLoss * 1.2);
+            policyLoss = -Math.Min(unclippedLoss, clippedLoss);
 
             // Value loss
             double returns = advantage + trajectory.values[idx];
