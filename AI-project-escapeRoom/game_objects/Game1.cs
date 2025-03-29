@@ -153,7 +153,7 @@ namespace AI_project_escapeRoom
             {
                 await Task.Run(() =>
                 {
-                    ppo.Train(gameEnvironment, 1000000, "ppo_prog", "ppo_model.meta");
+                    ppo.Train(gameEnvironment, 1000000, "ppo_prog.json", "ppo_model.json");
                 }, token);
 
                 // Switch to manual mode after training
@@ -317,7 +317,11 @@ namespace AI_project_escapeRoom
 
                 Thread.Sleep(100);
             }
-
+            if (player.heldBox != null)
+            {
+                previousBoxState = true;
+            }
+            else previousBoxState = false;
             base.Update(gameTime);
         }
 
@@ -401,7 +405,7 @@ namespace AI_project_escapeRoom
 
             // Draw text at the upper corner of the screen
             SpriteFont font = Content.Load<SpriteFont>("File");
-            _spriteBatch.DrawString(font, "Epesode:  " + ppo.curentEpeisode, new Vector2(10, 30), Color.Red);
+            _spriteBatch.DrawString(font, "Epesode:  " + ppo.curentEpisode, new Vector2(10, 30), Color.Red);
             _spriteBatch.DrawString(font, "Rewards:  " + ppo.totalRewardInEpisode.ToString(), new Vector2(10, 50), Color.Red);
             _spriteBatch.DrawString(font, "Policy loss:  " + ppo.policyLossesfordispaly.ToString("F3"), new Vector2(10, 70), Color.Red);
             _spriteBatch.DrawString(font, "value loss:  " + ppo.Value_Loss.ToString("F3"), new Vector2(10, 90), Color.Red);
