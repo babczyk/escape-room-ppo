@@ -147,7 +147,7 @@ class GameEnvironment
             currentStep = 0;
         }
 
-        //Thread.Sleep(1);
+        Thread.Sleep(1);
         return (GetState(), reward, IsDone);
     }
 

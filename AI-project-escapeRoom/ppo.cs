@@ -48,7 +48,7 @@ class PPO
     // Hyperparameters
     private const double GAMMA = 0.99f;
     private const double CLIP_EPSILON = 0.2f;
-    private const double LEARNING_RATE = 0.001f;
+    private const double LEARNING_RATE = 0.002f;
     private const int EPOCHS = 8;
     private double ENTROPY_COEF = 0.05f; // Made non-constant to allow decay
     private const double VALUE_COEF = 0.3f;
@@ -100,6 +100,7 @@ class PPO
         valueWeights3 = InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
         valueOutputWeights = InitializeWeights(HIDDEN_LAYER_3_SIZE, 1).Cast<double>().ToArray();
         valueWeightsOutput = InitializeWeights(HIDDEN_LAYER_3_SIZE, 1);
+        Console.WriteLine(actionSize);
         policyWeightsOutput = InitializeWeights(HIDDEN_LAYER_3_SIZE, actionSize);
 
         // Bias initialization (small random values)
@@ -463,7 +464,6 @@ class PPO
             double[] stateVector = state.Select(s => (double)s).ToArray();
             double[] actionProbs = PolicyForward(stateVector);
             int action = SampleAction(actionProbs);
-            Console.WriteLine(action);
 
             double actionProb = actionProbs[action];
             double valueEstimate = ValueForward(stateVector);

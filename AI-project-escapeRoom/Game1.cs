@@ -153,7 +153,7 @@ namespace AI_project_escapeRoom
             {
                 await Task.Run(() =>
                 {
-                    ppo.Train(gameEnvironment, 1000000, "ppo_prog", "ppo_model.meta");
+                    ppo.Train(gameEnvironment, 1000000, "ppo_prog.json", "ppo_model.json");
                 }, token);
 
                 // Switch to manual mode after training
