@@ -1,7 +1,6 @@
 using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
-
 public class GameObject
 {
     public Vector2 Position { get; set; }
@@ -12,7 +11,6 @@ public class GameObject
 
     public float gravity { private get; set; }
     private float terminalVelocity;
-    private bool wascolliding;
     private Texture2D texture;
 
     public GameObject(Vector2 position, Vector2 size, String roll = "ROLL", float gravity = 9.8f, float terminalVelocity = 100000f)
@@ -88,11 +86,6 @@ public class GameObject
               thisRect.Top <= otherRect.Bottom &&
               thisRect.Bottom >= otherRect.Top;
         //System.Console.WriteLine(thisRect.Bottom + " " + otherRect.Top + " " + intersects + " " + ROLL);
-
-        if (intersects)
-        {
-            wascolliding = true;
-        }
 
         // Check for intersection
         return intersects;
