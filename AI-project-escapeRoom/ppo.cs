@@ -9,7 +9,7 @@ using Microsoft.Xna.Framework;
 
 class PPO
 {
-    private static Random rng = new Random();
+    private static Random random = new Random();
     public int curentEpisode = 0;
     public double policyLossesfordispaly = 0;
     public double Value_Loss = 0;
@@ -73,9 +73,10 @@ class PPO
     private double[] valueRunningMean;      // Running means for each layer
     private double[] valueRunningVar;       // Running variances for each layer
 
-    private Random random;
     private int stateSize;
     private int actionSize;
+
+    private PPOHelper helper = new PPOHelper();
 
     /// <summary>
     /// Initializes a new instance of the PPO class, setting up neural networks.
@@ -86,22 +87,20 @@ class PPO
     {
         this.stateSize = stateSize;
         this.actionSize = actionSize;
-        random = new Random();
 
         // Initialize policy network
-        policyWeights1 = InitializeWeights(stateSize, HIDDEN_LAYER_1_SIZE);
-        policyWeights2 = InitializeWeights(HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE);
-        policyWeights3 = InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
-        policyOutputWeights = InitializeWeights(HIDDEN_LAYER_3_SIZE, actionSize).Cast<double>().ToArray();
+        policyWeights1 = helper.InitializeWeights(stateSize, HIDDEN_LAYER_1_SIZE);
+        policyWeights2 = helper.InitializeWeights(HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE);
+        policyWeights3 = helper.InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
+        policyOutputWeights = helper.InitializeWeights(HIDDEN_LAYER_3_SIZE, actionSize).Cast<double>().ToArray();
 
         // Initialize value network
-        valueWeights1 = InitializeWeights(stateSize, HIDDEN_LAYER_1_SIZE);
-        valueWeights2 = InitializeWeights(HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE);
-        valueWeights3 = InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
-        valueOutputWeights = InitializeWeights(HIDDEN_LAYER_3_SIZE, 1).Cast<double>().ToArray();
-        valueWeightsOutput = InitializeWeights(HIDDEN_LAYER_3_SIZE, 1);
-        Console.WriteLine(actionSize);
-        policyWeightsOutput = InitializeWeights(HIDDEN_LAYER_3_SIZE, actionSize);
+        valueWeights1 = helper.InitializeWeights(stateSize, HIDDEN_LAYER_1_SIZE);
+        valueWeights2 = helper.InitializeWeights(HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE);
+        valueWeights3 = helper.InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
+        valueOutputWeights = helper.InitializeWeights(HIDDEN_LAYER_3_SIZE, 1).Cast<double>().ToArray();
+        valueWeightsOutput = helper.InitializeWeights(HIDDEN_LAYER_3_SIZE, 1);
+        policyWeightsOutput = helper.InitializeWeights(HIDDEN_LAYER_3_SIZE, actionSize);
 
         // Bias initialization (small random values)
         policyBias1 = new double[HIDDEN_LAYER_1_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
@@ -161,72 +160,6 @@ class PPO
     }
 
     /// <summary>
-    /// Initializes a weight matrix with scaled random values.
-    /// </summary>
-    /// <param name="inputSize">Size of the input layer</param>
-    /// <param name="outputSize">Size of the output layer</param>
-    /// <returns>A 2D array of initialized weights scaled by sqrt(2/inputSize)</returns>
-    private double[,] InitializeWeights(int inputSize, int outputSize)
-    {
-        double[,] weights = new double[inputSize, outputSize];
-        double scale = Math.Sqrt(2.0 / inputSize); // He Initialization
-
-        for (int i = 0; i < inputSize; i++)
-            for (int j = 0; j < outputSize; j++)
-                weights[i, j] = (random.NextDouble() * 2 - 1) * scale;
-
-        return weights;
-    }
-
-    /// <summary>
-    /// Performs a linear transformation (matrix multiplication) of the input.
-    /// </summary>
-    /// <param name="input">Input vector</param>
-    /// <param name="weights">Weight matrix</param>
-    /// <param name="biasWeights">Optional bias weights</param>
-    /// <returns>Output vector after linear transformation</returns>
-    private double[] LinearLayer(double[] input, double[,] weights, double[]? biasWeights = null)
-    {
-        int outputSize = weights.GetLength(1);
-        double[] output = new double[outputSize];
-
-        for (int i = 0; i < outputSize; i++)
-        {
-            for (int j = 0; j < input.Length; j++)
-                output[i] += input[j] * weights[j, i];
-
-            if (biasWeights != null)
-                output[i] += biasWeights[i];
-        }
-
-        return output;
-    }
-
-    /// <summary>
-    /// Applies the LeakyReLU activation function element-wise to the input vector.
-    /// LeakyReLU(x) = max(0, x)
-    /// </summary>
-    /// <param name="x">Input vector</param>
-    /// <returns>Vector with LeakyReLU activation applied</returns>
-    private double[] LeakyReLU(double[] input, double alpha = 0.01)
-    {
-        return input.Select(x => x > 0 ? x : alpha * x).ToArray();
-    }
-
-    /// <summary>
-    /// Applies the softmax function to convert logits to probabilities.
-    /// </summary>
-    /// <param name="x">Input logits</param>
-    /// <returns>Probability distribution that sums to 1</returns>
-    private double[] Softmax(double[] logits, double temperature = 1.5)
-    {
-        double maxLogit = logits.Max(); // Prevents numerical instability
-        double[] expValues = logits.Select(l => Math.Exp((l - maxLogit) / temperature)).ToArray();
-        double sumExp = expValues.Sum();
-        return expValues.Select(e => e / sumExp).ToArray();
-    }
-
-    /// <summary>
     /// Performs a forward pass through the policy network to predict action probabilities.
     /// </summary>
     /// <param name="input">The current state as a vector</param>
@@ -235,22 +168,22 @@ class PPO
     private double[] PolicyForward(double[] input, bool isTraining = true)
     {
         // First layer
-        var z1 = LinearLayer(input, policyWeights1, policyBias1);
+        var z1 = helper.LinearLayer(input, policyWeights1, policyBias1);
         var bn1 = BatchNormalize(z1, 0, isTraining); // Layer index 0
-        var layer1 = LeakyReLU(bn1);
+        var layer1 = helper.LeakyReLU(bn1);
 
         // Second layer
-        var z2 = LinearLayer(layer1, policyWeights2, policyBias2);
+        var z2 = helper.LinearLayer(layer1, policyWeights2, policyBias2);
         var bn2 = BatchNormalize(z2, 1, isTraining); // Layer index 1
-        var layer2 = LeakyReLU(bn2);
+        var layer2 = helper.LeakyReLU(bn2);
 
         // Third layer
-        var z3 = LinearLayer(layer2, policyWeights3, policyBias3);
+        var z3 = helper.LinearLayer(layer2, policyWeights3, policyBias3);
         var bn3 = BatchNormalize(z3, 2, isTraining); // Layer index 2
-        var layer3 = LeakyReLU(bn3);
+        var layer3 = helper.LeakyReLU(bn3);
 
         // Output layer - typically no BatchNorm on output layer
-        var output = LinearLayer(layer3, policyWeightsOutput, policyOutputBias);
+        var output = helper.LinearLayer(layer3, policyWeightsOutput, policyOutputBias);
 
         // You may want to reduce this scaling factor - 1000 is very high
         for (int i = 0; i < output.Length; i++)
@@ -258,7 +191,7 @@ class PPO
             output[i] *= 10; // More reasonable scaling
         }
 
-        var probabilities = Softmax(output);
+        var probabilities = helper.Softmax(output);
         return probabilities;
     }
 
@@ -321,14 +254,7 @@ class PPO
 
         return normalized;
     }
-    public static double RandomGaussian(double mean = 0.0, double stdDev = 1.0)
-    {
-        double u1 = 1.0 - rng.NextDouble(); // Uniform(0,1] random value
-        double u2 = 1.0 - rng.NextDouble();
 
-        double randStdNormal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
-        return mean + stdDev * randStdNormal; // Scale to desired mean/stdDev
-    }
     /// <summary>
     /// Computes advantages using Generalized Advantage Estimation (GAE).
     /// </summary>
@@ -368,22 +294,22 @@ class PPO
     private double ValueForward(double[] input, bool isTraining = true)
     {
         // First layer
-        var z1 = LinearLayer(input, valueWeights1, valueBias1);
+        var z1 = helper.LinearLayer(input, valueWeights1, valueBias1);
         var bn1 = BatchNormalizeValue(z1, 0, isTraining); // Layer index 0
-        var layer1 = LeakyReLU(bn1);
+        var layer1 = helper.LeakyReLU(bn1);
 
         // Second layer
-        var z2 = LinearLayer(layer1, valueWeights2, valueBias2);
+        var z2 = helper.LinearLayer(layer1, valueWeights2, valueBias2);
         var bn2 = BatchNormalizeValue(z2, 1, isTraining); // Layer index 1
-        var layer2 = LeakyReLU(bn2);
+        var layer2 = helper.LeakyReLU(bn2);
 
         // Third layer
-        var z3 = LinearLayer(layer2, valueWeights3, valueBias3);
+        var z3 = helper.LinearLayer(layer2, valueWeights3, valueBias3);
         var bn3 = BatchNormalizeValue(z3, 2, isTraining); // Layer index 2
-        var layer3 = LeakyReLU(bn3);
+        var layer3 = helper.LeakyReLU(bn3);
 
         // Output layer - typically no BatchNorm on output layer for value function
-        var output = LinearLayer(layer3, valueWeightsOutput, valueOutputWeights);
+        var output = helper.LinearLayer(layer3, valueWeightsOutput, valueOutputWeights);
         return output[0];  // Single value output
     }
 
@@ -463,7 +389,7 @@ class PPO
         {
             double[] stateVector = state.Select(s => (double)s).ToArray();
             double[] actionProbs = PolicyForward(stateVector);
-            int action = SampleAction(actionProbs);
+            int action = helper.SampleAction(actionProbs);
 
             double actionProb = actionProbs[action];
             double valueEstimate = ValueForward(stateVector);
@@ -550,6 +476,7 @@ class PPO
             }
         }
     }
+
     /// <summary>
     /// Loads a model from a JSON file.
     /// </summary>
@@ -570,27 +497,27 @@ class PPO
             {
                 var root = document.RootElement;
 
-                // Load policy network weights and biases
-                policyWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("POLICY1").GetRawText()));
-                policyWeights2 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("POLICY2").GetRawText()));
-                policyWeights3 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("POLICY3").GetRawText()));
-                policyOutputWeights = JsonSerializer.Deserialize<double[]>(root.GetProperty("POLICY_OUTPUT").GetRawText());
-                policyWeightsOutput = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("POLICY_WEIGHTS_OUTPUT").GetRawText()));
-                policyBias1 = JsonSerializer.Deserialize<double[]>(root.GetProperty("POLICY_BIAS1").GetRawText());
-                policyBias2 = JsonSerializer.Deserialize<double[]>(root.GetProperty("POLICY_BIAS2").GetRawText());
-                policyBias3 = JsonSerializer.Deserialize<double[]>(root.GetProperty("POLICY_BIAS3").GetRawText());
-                policyOutputBias = JsonSerializer.Deserialize<double[]>(root.GetProperty("POLICY_OUTPUT_BIAS").GetRawText());
+                policyWeights1 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "POLICY1"));
+                // Load policy network weights
+                policyWeights2 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "POLICY2"));
+                policyWeights3 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "POLICY3"));
+                policyOutputWeights = helper.SafeDeserialize1D(root, "POLICY_OUTPUT");
+                policyWeightsOutput = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "POLICY_WEIGHTS_OUTPUT"));
+                policyBias1 = helper.SafeDeserialize1D(root, "POLICY_BIAS1");
+                policyBias2 = helper.SafeDeserialize1D(root, "POLICY_BIAS2");
+                policyBias3 = helper.SafeDeserialize1D(root, "POLICY_BIAS3");
+                policyOutputBias = helper.SafeDeserialize1D(root, "POLICY_OUTPUT_BIAS");
 
                 // Load value network weights
-                valueWeights1 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("VALUE1").GetRawText()));
-                valueWeights2 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("VALUE2").GetRawText()));
-                valueWeights3 = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("VALUE3").GetRawText()));
-                valueOutputWeights = JsonSerializer.Deserialize<double[]>(root.GetProperty("VALUE_OUTPUT").GetRawText());
-                valueWeightsOutput = ConvertTo2DArray(JsonSerializer.Deserialize<double[][]>(root.GetProperty("VALUE_WEIGHTS_OUTPUT").GetRawText()));
+                valueWeights1 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE1"));
+                valueWeights2 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE2"));
+                valueWeights3 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE3"));
+                valueOutputWeights = helper.SafeDeserialize1D(root, "VALUE_OUTPUT");
+                valueWeightsOutput = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE_WEIGHTS_OUTPUT"));
 
                 // Load BatchNorm statistics
-                runningMean = JsonSerializer.Deserialize<double[]>(root.GetProperty("RUNNING_MEAN").GetRawText());
-                runningVar = JsonSerializer.Deserialize<double[]>(root.GetProperty("RUNNING_VAR").GetRawText());
+                runningMean = helper.SafeDeserialize1D(root, "RUNNING_MEAN");
+                runningVar = helper.SafeDeserialize1D(root, "RUNNING_VAR");
             }
 
             Console.WriteLine($"Model successfully loaded from {filePath}");
@@ -600,20 +527,6 @@ class PPO
             Console.WriteLine($"Error loading model: {ex.Message}");
             throw;
         }
-    }
-
-    // Helper method to get property with case-insensitive matching
-    private JsonElement GetProperty(JsonElement element, string propertyName)
-    {
-        foreach (var property in element.EnumerateObject())
-        {
-            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
-            {
-                return property.Value;
-            }
-        }
-
-        throw new KeyNotFoundException($"Property '{propertyName}' not found in JSON");
     }
 
     /// <summary>
@@ -666,22 +579,22 @@ class PPO
             IN_EPISODE = episode,
 
             // Policy network weights and biases
-            POLICY1 = ConvertToJaggedArray(policyWeights1),
-            POLICY2 = ConvertToJaggedArray(policyWeights2),
-            POLICY3 = ConvertToJaggedArray(policyWeights3),
+            POLICY1 = helper.ConvertToJaggedArray(policyWeights1),
+            POLICY2 = helper.ConvertToJaggedArray(policyWeights2),
+            POLICY3 = helper.ConvertToJaggedArray(policyWeights3),
             POLICY_OUTPUT = policyOutputWeights,
-            POLICY_WEIGHTS_OUTPUT = ConvertToJaggedArray(policyWeightsOutput),
+            POLICY_WEIGHTS_OUTPUT = helper.ConvertToJaggedArray(policyWeightsOutput),
             POLICY_BIAS1 = policyBias1,
             POLICY_BIAS2 = policyBias2,
             POLICY_BIAS3 = policyBias3,
             POLICY_OUTPUT_BIAS = policyOutputBias,
 
             // Value network weights
-            VALUE1 = ConvertToJaggedArray(valueWeights1),
-            VALUE2 = ConvertToJaggedArray(valueWeights2),
-            VALUE3 = ConvertToJaggedArray(valueWeights3),
+            VALUE1 = helper.ConvertToJaggedArray(valueWeights1),
+            VALUE2 = helper.ConvertToJaggedArray(valueWeights2),
+            VALUE3 = helper.ConvertToJaggedArray(valueWeights3),
             VALUE_OUTPUT = valueOutputWeights,
-            VALUE_WEIGHTS_OUTPUT = ConvertToJaggedArray(valueWeightsOutput),
+            VALUE_WEIGHTS_OUTPUT = helper.ConvertToJaggedArray(valueWeightsOutput),
 
             // BatchNorm statistics
             RUNNING_MEAN = runningMean,
@@ -712,62 +625,6 @@ class PPO
         File.WriteAllText(filePath, json);
     }
 
-    private static double[][] ConvertToJaggedArray(double[,] array)
-    {
-        int rows = array.GetLength(0);
-        int cols = array.GetLength(1);
-        double[][] jaggedArray = new double[rows][];
-        for (int i = 0; i < rows; i++)
-        {
-            jaggedArray[i] = new double[cols];
-            for (int j = 0; j < cols; j++)
-            {
-                jaggedArray[i][j] = array[i, j];
-            }
-        }
-        return jaggedArray;
-    }
-
-    private static double[,] ConvertTo2DArray(double[][] jaggedArray)
-    {
-        int rows = jaggedArray.Length;
-        int cols = jaggedArray[0].Length;
-        double[,] array = new double[rows, cols];
-        for (int i = 0; i < rows; i++)
-        {
-            for (int j = 0; j < cols; j++)
-            {
-                array[i, j] = jaggedArray[i][j];
-            }
-        }
-        return array;
-    }
-    /// <summary>
-    /// Samples an action from a probability distribution over actions.
-    /// </summary>
-    /// <param name="actionProbs">Probability distribution over actions</param>
-    /// <returns>Chosen action index</returns>
-    private int SampleAction(double[] actionProbs, bool isTraining = true)
-    {
-        double temperature = 1.5; // Adjust temperature scaling (higher = more randomness)
-
-        double[] scaledProbs = actionProbs.Select(p => Math.Pow(p, 1 / temperature)).ToArray();
-        double sum = scaledProbs.Sum();
-        double[] normalizedProbs = scaledProbs.Select(p => p / sum).ToArray();
-
-        double sample = random.NextDouble();
-        double cumulative = 0;
-
-        for (int i = 0; i < normalizedProbs.Length; i++)
-        {
-            cumulative += normalizedProbs[i];
-            if (sample <= cumulative)
-                return i;
-        }
-        return normalizedProbs.Length - 1; // Fallback
-    }
-
-
 
     private void UpdateNetworkWeights(double totalLoss)
     {
@@ -790,7 +647,7 @@ class PPO
         for (int i = 0; i < policyBias1.Length; i++)
         {
             // Gradient descent update with momentum
-            double gradient = loss * CalculateLayerGradient(policyBias1[i]);
+            double gradient = loss * helper.CalculateLayerGradient(policyBias1[i]);
             double momentum = 0.9 * policyBias1[i];
             double update = currentLearningRate * (gradient + momentum);
 
@@ -805,7 +662,7 @@ class PPO
         // Update policy network layer 2
         for (int i = 0; i < policyBias2.Length; i++)
         {
-            double gradient = loss * CalculateLayerGradient(policyBias2[i]);
+            double gradient = loss * helper.CalculateLayerGradient(policyBias2[i]);
             double momentum = 0.9 * policyBias2[i];
             double update = currentLearningRate * (gradient + momentum);
             update = Math.Clamp(update, -1.0, 1.0);
@@ -816,7 +673,7 @@ class PPO
         // Update policy network layer 3
         for (int i = 0; i < policyBias3.Length; i++)
         {
-            double gradient = loss * CalculateLayerGradient(policyBias3[i]);
+            double gradient = loss * helper.CalculateLayerGradient(policyBias3[i]);
             double momentum = 0.9 * policyBias3[i];
             double update = currentLearningRate * (gradient + momentum);
             update = Math.Clamp(update, -1.0, 1.0);
@@ -827,7 +684,7 @@ class PPO
         // Update policy output weights
         for (int i = 0; i < policyOutputBias.Length; i++)
         {
-            double gradient = loss * CalculateOutputGradient(policyOutputBias[i]);
+            double gradient = loss * helper.CalculateOutputGradient(policyOutputBias[i]);
             double momentum = 0.9 * policyOutputBias[i];
             double update = currentLearningRate * (gradient + momentum);
             update = Math.Clamp(update, -1.0, 1.0);
@@ -847,7 +704,7 @@ class PPO
             for (int j = 0; j < policyWeights1.GetLength(1); j++)
             {
                 // Gradient descent update with momentum
-                double gradient = loss * CalculateLayerGradient(policyWeights1[i, j]);
+                double gradient = loss * helper.CalculateLayerGradient(policyWeights1[i, j]);
                 double momentum = 0.9 * policyWeights1[i, j];
                 double update = currentLearningRate * (gradient + momentum);
 
@@ -865,7 +722,7 @@ class PPO
         {
             for (int j = 0; j < policyWeights2.GetLength(1); j++)
             {
-                double gradient = loss * CalculateLayerGradient(policyWeights2[i, j]);
+                double gradient = loss * helper.CalculateLayerGradient(policyWeights2[i, j]);
                 double momentum = 0.9 * policyWeights2[i, j];
                 double update = currentLearningRate * (gradient + momentum);
                 update = Math.Clamp(update, -1.0, 1.0);
@@ -879,7 +736,7 @@ class PPO
         {
             for (int j = 0; j < policyWeights3.GetLength(1); j++)
             {
-                double gradient = loss * CalculateLayerGradient(policyWeights3[i, j]);
+                double gradient = loss * helper.CalculateLayerGradient(policyWeights3[i, j]);
                 double momentum = 0.9 * policyWeights3[i, j];
                 double update = currentLearningRate * (gradient + momentum);
                 update = Math.Clamp(update, -1.0, 1.0);
@@ -891,7 +748,7 @@ class PPO
         // Update policy output weights
         for (int i = 0; i < policyOutputWeights.Length; i++)
         {
-            double gradient = loss * CalculateOutputGradient(policyOutputWeights[i]);
+            double gradient = loss * helper.CalculateOutputGradient(policyOutputWeights[i]);
             double momentum = 0.9 * policyOutputWeights[i];
             double update = currentLearningRate * (gradient + momentum);
             update = Math.Clamp(update, -1.0, 1.0);
@@ -916,7 +773,7 @@ class PPO
             for (int j = 0; j < valueWeights1.GetLength(1); j++)
             {
                 // Compute the gradient and apply momentum
-                double gradient = loss * CalculateLayerGradient(valueWeights1[i, j]);
+                double gradient = loss * helper.CalculateLayerGradient(valueWeights1[i, j]);
                 double momentum = 0.9 * valueWeights1[i, j];
                 double update = currentLearningRate * (gradient + momentum);
 
@@ -936,7 +793,7 @@ class PPO
         {
             for (int j = 0; j < valueWeights2.GetLength(1); j++)
             {
-                double gradient = loss * CalculateLayerGradient(valueWeights2[i, j]);
+                double gradient = loss * helper.CalculateLayerGradient(valueWeights2[i, j]);
                 double momentum = 0.9 * valueWeights2[i, j];
                 double update = currentLearningRate * (gradient + momentum);
                 update = Math.Clamp(update, -1.0, 1.0);
@@ -950,7 +807,7 @@ class PPO
         {
             for (int j = 0; j < valueWeights3.GetLength(1); j++)
             {
-                double gradient = loss * CalculateLayerGradient(valueWeights3[i, j]);
+                double gradient = loss * helper.CalculateLayerGradient(valueWeights3[i, j]);
                 double momentum = 0.9 * valueWeights3[i, j];
                 double update = currentLearningRate * (gradient + momentum);
                 update = Math.Clamp(update, -1.0, 1.0);
@@ -962,33 +819,13 @@ class PPO
         // Update value output weights
         for (int i = 0; i < valueOutputWeights.Length; i++)
         {
-            double gradient = loss * CalculateOutputGradient(valueOutputWeights[i]);
+            double gradient = loss * helper.CalculateOutputGradient(valueOutputWeights[i]);
             double momentum = 0.9 * valueOutputWeights[i];
             double update = currentLearningRate * (gradient + momentum);
             update = Math.Clamp(update, -1.0, 1.0);
             valueOutputWeights[i] -= update;
             //valueOutputWeights[i] = gradient;
         }
-    }
-
-    private double CalculateLayerGradient(double weight)
-    {
-        // Add small noise for exploration
-        double noise = random.NextDouble() * 0.01;
-
-        // Calculate gradient with weight decay
-        double weightDecay = 0.0001 * weight;
-
-        return weight + noise + weightDecay;
-    }
-
-    private double CalculateOutputGradient(double weight)
-    {
-        // Similar to layer gradient but with different scaling
-        double noise = random.NextDouble() * 0.005;
-        double weightDecay = 0.0001 * weight;
-
-        return weight + noise + weightDecay;
     }
 
     /// <summary>
@@ -1049,28 +886,5 @@ class PPO
         // Apply updates - only add the entropy term if entropy is below target
         double totalLoss = policyLoss + VALUE_COEF * valueLoss + ENTROPY_COEF * entropy;
         UpdateNetworkWeights(totalLoss);
-    }
-
-    /// <summary>
-    /// Loads training progress from a file.
-    /// </summary>
-    /// <param name="filePath">Path to the progress file</param>
-    /// <returns>Episode number, best reward, and recent rewards</returns>
-    class TrajectoryData
-    {
-        public List<double[]> states = new List<double[]>();
-        public List<int> actions = new List<int>();
-        public List<double> oldActionProbs = new List<double>();
-        public List<double> values = new List<double>();
-        public List<double> rewards = new List<double>();
-        public List<double> advantages = new List<double>();
-
-        public void AddStep(double[] state, int action, double actionProb, double value)
-        {
-            states.Add(state);
-            actions.Add(action);
-            oldActionProbs.Add(actionProb);
-            values.Add(value);
-        }
     }
 }
