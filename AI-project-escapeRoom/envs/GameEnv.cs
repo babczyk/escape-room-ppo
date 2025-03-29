@@ -13,17 +13,18 @@ using System.Collections.Generic;
 class GameEnvironment
 {
     private Game1 game;
-    private int maxSteps = 10000;
+    private int maxSteps = 50000;
     private int currentStep;
     public List<int> PlayerMove;
 
-    public double pick_the_box = 10;
-    public double place_the_box_good = 20;
-    public double finish_reward = 200;
+    public double pick_the_box = 1;
+    public double place_the_box_good = 5;
+    public double finish_reward = 10;
+
     public double droping_box_bad = -2;
     public double culide_with_wall = -1;
-    public double repeating_actions = -0.5;
-    public double time_panalty = -0.1;
+    public double repeating_actions = -1;
+    public double time_panalty = -0.5;
     public double max_steps_panalty = -5;
 
     public GameEnvironment(Game1 game)
@@ -47,7 +48,10 @@ class GameEnvironment
         game.door.Position.Y / game.groundLevel,
         game.player.heldBox != null ? 1.0 : 0.0,
         game.IsPressed ? 1.0 : 0.0,
-        game.IsOpen ? 1.0 : 0.0
+        game.IsOpen ? 1.0 : 0.0,
+        game.player.Velocity.Length(),
+        Vector2.Distance(game.player.Position, game.box.Position),
+        Vector2.Distance(game.box.Position, game.button.Position)
         };
     }
 

@@ -81,7 +81,7 @@ class PPO
     /// </summary>
     /// <param name="stateSize">Number of inputs in the state vector</param>
     /// <param name="actionSize">Number of possible actions</param>
-    public PPO(int stateSize = 11, int actionSize = 5)
+    public PPO(int stateSize = 14, int actionSize = 5)
     {
         this.stateSize = stateSize;
         this.actionSize = actionSize;
@@ -621,6 +621,18 @@ class PPO
     /// <param name="recentRewards"></param>
     public void SaveProgress(string filePath, int episode, double bestReward, List<double> recentRewards)
     {
+        if (!File.Exists(filePath))
+        {
+            var newprogress = new
+            {
+                Episode = episode,
+                BestReward = bestReward,
+                RecentRewards = recentRewards
+            };
+            var newjson = JsonSerializer.Serialize(newprogress);
+            File.WriteAllText(filePath, newjson);
+            return;
+        }
         var exsistingJson = File.ReadAllText(filePath);
         var existingProgress = JsonSerializer.Deserialize<JsonElement>(exsistingJson);
         var progress = new
