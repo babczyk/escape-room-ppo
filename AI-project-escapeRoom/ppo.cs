@@ -82,15 +82,15 @@ class PPO
     private double[,] velocityVW3;
     private double[,] velocityVWOutput;
 
-    private double[,] velocityBPW1;
-    private double[,] velocityBPW2;
-    private double[,] velocityBPW3;
-    private double[,] velocityBPWOutput;
+    private double[] velocityBPW1;
+    private double[] velocityBPW2;
+    private double[] velocityBPW3;
+    private double[] velocityBPWOutput;
 
-    private double[,] velocityBVW1;
-    private double[,] velocityBVW2;
-    private double[,] velocityBVW3;
-    private double[,] velocityBVWOutput;
+    private double[] velocityBVW1;
+    private double[] velocityBVW2;
+    private double[] velocityBVW3;
+    private double[] velocityBVWOutput;
 
     private int stateSize;
     private int actionSize;
@@ -186,15 +186,15 @@ class PPO
         velocityVW3 = new double[policyWeights3.GetLength(0), policyWeights3.GetLength(1)];
         velocityVWOutput = new double[policyWeightsOutput.GetLength(0), policyWeightsOutput.GetLength(1)];
 
-        velocityBPW1 = new double[policyWeights1.GetLength(0), policyWeights1.GetLength(1)];
-        velocityBPW2 = new double[policyWeights2.GetLength(0), policyWeights2.GetLength(1)];
-        velocityBPW3 = new double[policyWeights3.GetLength(0), policyWeights3.GetLength(1)];
-        velocityBPWOutput = new double[policyWeightsOutput.GetLength(0), policyWeightsOutput.GetLength(1)];
+        velocityBPW1 = new double[policyWeights1.Length];
+        velocityBPW2 = new double[policyWeights2.Length];
+        velocityBPW3 = new double[policyWeights3.Length];
+        velocityBPWOutput = new double[policyWeightsOutput.Length];
 
-        velocityBVW1 = new double[policyWeights1.GetLength(0), policyWeights1.GetLength(1)];
-        velocityBVW2 = new double[policyWeights2.GetLength(0), policyWeights2.GetLength(1)];
-        velocityBVW3 = new double[policyWeights3.GetLength(0), policyWeights3.GetLength(1)];
-        velocityBVWOutput = new double[policyWeightsOutput.GetLength(0), policyWeightsOutput.GetLength(1)];
+        velocityBVW1 = new double[policyWeights1.Length];
+        velocityBVW2 = new double[policyWeights2.Length];
+        velocityBVW3 = new double[policyWeights3.Length];
+        velocityBVWOutput = new double[policyWeightsOutput.Length];
     }
 
     /// <summary>
@@ -223,6 +223,11 @@ class PPO
         // Output layer - typically no BatchNorm on output layer
         var output = helper.LinearLayer(layer3, policyWeightsOutput, policyOutputBias);
 
+        var maxlogits = output.Max();
+        for (int i = 0; i < output.Length; i++)
+        {
+            output[i] -= maxlogits; // Subtract maxlogits for numerical stability
+        }
 
 
         var probabilities = helper.Softmax(output);
@@ -706,53 +711,44 @@ class PPO
         // Learning rate with decay
         double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
 
-        // Update policy network layer 1
+        // Update policy network layer 1 biases
         for (int i = 0; i < policyBias1.Length; i++)
         {
-            // Gradient descent update with momentum
             double gradient = loss * helper.CalculateLayerGradient(policyBias1[i]);
-            double momentum = 0.9 * policyBias1[i];
-            double update = currentLearningRate * (gradient + momentum);
 
-            // Update weight with gradient clipping
-            update = Math.Clamp(update, -1.0, 1.0);
-            policyBias1[i] -= update;
+            // Apply momentum correction
+            velocityBPW1[i] = 0.9 * velocityBPW1[i] + 0.1 * gradient;
+            double clippedUpdate = Math.Clamp(velocityBPW1[i], -1.0, 1.0);
 
-            // Store gradient for momentum
-            //policyWeights1[i, j] = gradient;
+            // Update bias using velocity
+            policyBias1[i] -= currentLearningRate * clippedUpdate;
         }
 
-        // Update policy network layer 2
+        // Update policy network layer 2 biases
         for (int i = 0; i < policyBias2.Length; i++)
         {
             double gradient = loss * helper.CalculateLayerGradient(policyBias2[i]);
-            double momentum = 0.9 * policyBias2[i];
-            double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -1.0, 1.0);
-            policyBias2[i] -= update;
-            //policyWeights2[i, j] = gradient;
+            velocityBPW2[i] = 0.9 * velocityBPW2[i] + 0.1 * gradient;
+            double clippedUpdate = Math.Clamp(velocityBPW2[i], -1.0, 1.0);
+            policyBias2[i] -= currentLearningRate * clippedUpdate;
         }
 
-        // Update policy network layer 3
+        // Update policy network layer 3 biases
         for (int i = 0; i < policyBias3.Length; i++)
         {
             double gradient = loss * helper.CalculateLayerGradient(policyBias3[i]);
-            double momentum = 0.9 * policyBias3[i];
-            double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -1.0, 1.0);
-            policyBias3[i] -= update;
-            //policyWeights3[i, j] = gradient;
+            velocityBPW3[i] = 0.9 * velocityBPW3[i] + 0.1 * gradient;
+            double clippedUpdate = Math.Clamp(velocityBPW3[i], -1.0, 1.0);
+            policyBias3[i] -= currentLearningRate * clippedUpdate;
         }
 
-        // Update policy output weights
+        // Update policy output biases
         for (int i = 0; i < policyOutputBias.Length; i++)
         {
             double gradient = loss * helper.CalculateOutputGradient(policyOutputBias[i]);
-            double momentum = 0.9 * policyOutputBias[i];
-            double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -1.0, 1.0);
-            policyOutputBias[i] -= update;
-            //policyOutputWeights[i] = gradient;
+            velocityBPWOutput[i] = 0.9 * velocityBPWOutput[i] + 0.1 * gradient;
+            double clippedUpdate = Math.Clamp(velocityBPWOutput[i], -1.0, 1.0);
+            policyOutputBias[i] -= currentLearningRate * clippedUpdate;
         }
     }
 
@@ -761,53 +757,44 @@ class PPO
         // Learning rate with decay
         double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
 
-        // Update value network layer 1
+        // Update value network layer 1 biases
         for (int i = 0; i < valueBias1.Length; i++)
         {
-            // Gradient descent update with momentum
             double gradient = loss * helper.CalculateLayerGradient(valueBias1[i]);
-            double momentum = 0.9 * valueBias1[i];
-            double update = currentLearningRate * (gradient + momentum);
 
-            // Update weight with gradient clipping
-            update = Math.Clamp(update, -1.0, 1.0);
-            valueBias1[i] -= update;
+            // Apply momentum correction
+            velocityBVW1[i] = 0.9 * velocityBVW1[i] + 0.1 * gradient;
+            double clippedUpdate = Math.Clamp(velocityBVW1[i], -1.0, 1.0);
 
-            // Store gradient for momentum
-            //valueWeights1[i, j] = gradient;
+            // Update bias using velocity
+            valueBias1[i] -= currentLearningRate * clippedUpdate;
         }
 
-        // Update value network layer 2
+        // Update value network layer 2 biases
         for (int i = 0; i < valueBias2.Length; i++)
         {
             double gradient = loss * helper.CalculateLayerGradient(valueBias2[i]);
-            double momentum = 0.9 * valueBias2[i];
-            double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -1.0, 1.0);
-            valueBias2[i] -= update;
-            //valueWeights2[i, j] = gradient;
+            velocityBVW2[i] = 0.9 * velocityBVW2[i] + 0.1 * gradient;
+            double clippedUpdate = Math.Clamp(velocityBVW2[i], -1.0, 1.0);
+            valueBias2[i] -= currentLearningRate * clippedUpdate;
         }
 
-        // Update value network layer 3
+        // Update value network layer 3 biases
         for (int i = 0; i < valueBias3.Length; i++)
         {
             double gradient = loss * helper.CalculateLayerGradient(valueBias3[i]);
-            double momentum = 0.9 * valueBias3[i];
-            double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -1.0, 1.0);
-            valueBias3[i] -= update;
-            //valueWeights3[i, j] = gradient;
+            velocityBVW3[i] = 0.9 * velocityBVW3[i] + 0.1 * gradient;
+            double clippedUpdate = Math.Clamp(velocityBVW3[i], -1.0, 1.0);
+            valueBias3[i] -= currentLearningRate * clippedUpdate;
         }
 
-        // Update value output weights
+        // Update value output biases
         for (int i = 0; i < valueOutputBias.Length; i++)
         {
             double gradient = loss * helper.CalculateOutputGradient(valueOutputBias[i]);
-            double momentum = 0.9 * valueOutputBias[i];
-            double update = currentLearningRate * (gradient + momentum);
-            update = Math.Clamp(update, -1.0, 1.0);
-            valueOutputBias[i] -= update;
-            //valueOutputWeights[i] = gradient;
+            velocityBVWOutput[i] = 0.9 * velocityBVWOutput[i] + 0.1 * gradient;
+            double clippedUpdate = Math.Clamp(velocityBVWOutput[i], -1.0, 1.0);
+            valueOutputBias[i] -= currentLearningRate * clippedUpdate;
         }
     }
 
