@@ -32,6 +32,10 @@ plot_heatmap <- function(weight_matrix, title) {
 policy1_plot <- plot_heatmap(prog$POLICY1, "Policy Layer 1 Weights")
 policy2_plot <- plot_heatmap(prog$POLICY2, "Policy Layer 2 Weights")
 policy3_plot <- plot_heatmap(prog$POLICY3, "Policy Layer 3 Weights")
+policyOutput_plot <- plot_heatmap(
+  prog$POLICY_WEIGHTS_OUTPUT,
+  "Policy Layer output Weights"
+)
 
 
 # 🔥 Plot Training Progress
@@ -66,6 +70,7 @@ bias_plot <- ggplot(
 grid.arrange(policy1_plot,
   policy2_plot,
   policy3_plot,
+  policyOutput_plot,
   reward_plot,
   bias_plot,
   ncol = 3,

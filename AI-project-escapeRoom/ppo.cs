@@ -175,26 +175,29 @@ class PPO
             }
         }
 
-        // Initialize them with zeros (same size as corresponding weight matrices)
-        velocityPW1 = new double[policyWeights1.GetLength(0), policyWeights1.GetLength(1)];
-        velocityPW2 = new double[policyWeights2.GetLength(0), policyWeights2.GetLength(1)];
-        velocityPW3 = new double[policyWeights3.GetLength(0), policyWeights3.GetLength(1)];
-        velocityPWOutput = new double[policyWeightsOutput.GetLength(0), policyWeightsOutput.GetLength(1)];
+        // Policy Weight Velocities
+        velocityPW1 = helper.InitializeVelocity(policyWeights1);
+        velocityPW2 = helper.InitializeVelocity(policyWeights2);
+        velocityPW3 = helper.InitializeVelocity(policyWeights3);
+        velocityPWOutput = helper.InitializeVelocity(policyWeightsOutput);
 
-        velocityVW1 = new double[policyWeights1.GetLength(0), policyWeights1.GetLength(1)];
-        velocityVW2 = new double[policyWeights2.GetLength(0), policyWeights2.GetLength(1)];
-        velocityVW3 = new double[policyWeights3.GetLength(0), policyWeights3.GetLength(1)];
-        velocityVWOutput = new double[policyWeightsOutput.GetLength(0), policyWeightsOutput.GetLength(1)];
+        // Value Weight Velocities
+        velocityVW1 = helper.InitializeVelocity(policyWeights1);
+        velocityVW2 = helper.InitializeVelocity(policyWeights2);
+        velocityVW3 = helper.InitializeVelocity(policyWeights3);
+        velocityVWOutput = helper.InitializeVelocity(policyWeightsOutput);
 
-        velocityBPW1 = new double[policyWeights1.Length];
-        velocityBPW2 = new double[policyWeights2.Length];
-        velocityBPW3 = new double[policyWeights3.Length];
-        velocityBPWOutput = new double[policyWeightsOutput.Length];
+        // Policy Bias Velocities
+        velocityBPW1 = helper.InitializeVelocity(policyBias1);
+        velocityBPW2 = helper.InitializeVelocity(policyBias2);
+        velocityBPW3 = helper.InitializeVelocity(policyBias3);
+        velocityBPWOutput = helper.InitializeVelocity(policyOutputBias);
 
-        velocityBVW1 = new double[policyWeights1.Length];
-        velocityBVW2 = new double[policyWeights2.Length];
-        velocityBVW3 = new double[policyWeights3.Length];
-        velocityBVWOutput = new double[policyWeightsOutput.Length];
+        // Value Bias Velocities
+        velocityBVW1 = helper.InitializeVelocity(valueBias1);
+        velocityBVW2 = helper.InitializeVelocity(valueBias2);
+        velocityBVW3 = helper.InitializeVelocity(valueBias3);
+        velocityBVWOutput = helper.InitializeVelocity(valueOutputBias);
     }
 
     /// <summary>
@@ -231,7 +234,6 @@ class PPO
 
 
         var probabilities = helper.Softmax(output);
-        Console.WriteLine($"Probabilities: {string.Join(", ", probabilities)}");
         return probabilities;
     }
 
@@ -492,7 +494,7 @@ class PPO
             episodeRewards.Add(totalReward);
 
             totalRewardInEpisode = totalReward;
-            averageReward = episodeRewards.TakeLast(50).Average(); //take an avrege of 50 episodes (50 generations)
+            averageReward = episodeRewards.TakeLast(5).Average(); //take an avrege of 5 episodes (5 generations)
             // Log progress
             if (episode % 5 == 0)
             {
@@ -805,7 +807,7 @@ class PPO
             for (int j = 0; j < policyWeights1.GetLength(1); j++)
             {
                 double gradient = helper.ComputePPOGradient(policyWeights1[i, j], loss, entropyBonus);
-                velocityPW1[i, j] = 0.9 * velocityPW1[i, j] + 0.1 * gradient; // Apply momentum
+                velocityPW1[i, j] = 0.7 * velocityPW1[i, j] + 0.3 * gradient; // Apply momentum
                 double clippedUpdate = helper.ClipGradient(velocityPW1[i, j]);
                 policyWeights1[i, j] -= currentLearningRate * clippedUpdate;
             }
@@ -817,7 +819,7 @@ class PPO
             for (int j = 0; j < policyWeights2.GetLength(1); j++)
             {
                 double gradient = helper.ComputePPOGradient(policyWeights2[i, j], loss, entropyBonus);
-                velocityPW2[i, j] = 0.9 * velocityPW2[i, j] + 0.1 * gradient;
+                velocityPW2[i, j] = 0.7 * velocityPW2[i, j] + 0.3 * gradient;
                 double clippedUpdate = helper.ClipGradient(velocityPW2[i, j]);
                 policyWeights2[i, j] -= currentLearningRate * clippedUpdate;
             }
@@ -829,7 +831,7 @@ class PPO
             for (int j = 0; j < policyWeights3.GetLength(1); j++)
             {
                 double gradient = helper.ComputePPOGradient(policyWeights3[i, j], loss, entropyBonus);
-                velocityPW3[i, j] = 0.9 * velocityPW3[i, j] + 0.1 * gradient;
+                velocityPW3[i, j] = 0.7 * velocityPW3[i, j] + 0.3 * gradient;
                 double clippedUpdate = helper.ClipGradient(velocityPW3[i, j]);
                 policyWeights3[i, j] -= currentLearningRate * clippedUpdate;
             }
@@ -841,7 +843,7 @@ class PPO
             for (int j = 0; j < policyWeightsOutput.GetLength(1); j++)
             {
                 double gradient = helper.ComputePPOGradient(policyWeightsOutput[i, j], loss, entropyBonus);
-                velocityPWOutput[i, j] = 0.9 * velocityPWOutput[i, j] + 0.1 * gradient;
+                velocityPWOutput[i, j] = 0.7 * velocityPWOutput[i, j] + 0.3 * gradient;
                 double clippedUpdate = helper.ClipGradient(velocityPWOutput[i, j]);
                 policyWeightsOutput[i, j] -= currentLearningRate * clippedUpdate;
             }
@@ -937,9 +939,11 @@ class PPO
 
             // Policy loss with clipping
             double advantage = trajectory.advantages[idx];
+
             double unclippedSurrogate = ratio * advantage;
             double clippedSurrogate = Math.Clamp(ratio, 1 - CLIP_EPSILON, 1 + CLIP_EPSILON) * advantage;
             double policyLossForIdx = -Math.Min(unclippedSurrogate, clippedSurrogate);
+            totalPolicyLoss += policyLossForIdx;
 
             // Value loss
             double returns = advantage + trajectory.values[idx];
@@ -976,7 +980,6 @@ class PPO
         policyLosses.Add(policyLoss);
         valueLosses.Add(valueLoss);
         entropyValues.Add(entropy);
-
         // Compute total loss with entropy term
         UpdateNetworkWeights(policyLoss, valueLoss, entropyBonus);
     }

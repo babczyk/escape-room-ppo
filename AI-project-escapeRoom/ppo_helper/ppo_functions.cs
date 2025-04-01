@@ -215,7 +215,7 @@ class PPOHelper
     // Computes the PPO gradient with entropy regularization
     public double ComputePPOGradient(double weight, double loss, double entropyBonus)
     {
-        double entropyTerm = entropyBonus * Math.Log(Math.Abs(weight) + 1e-8); // Entropy regularization
+        double entropyTerm = entropyBonus > 0 ? entropyBonus : 1 * Math.Log(Math.Abs(weight) + 1e-8); // Entropy regularization
         return loss * (weight + entropyTerm);
     }
 
@@ -228,5 +228,32 @@ class PPOHelper
             return Math.Sign(gradient) * maxNorm;
         }
         return gradient;
+    }
+
+    public double[,] InitializeVelocity(double[,] weights)
+    {
+        Random rand = new Random();
+        double[,] velocity = new double[weights.GetLength(0), weights.GetLength(1)];
+
+        for (int i = 0; i < weights.GetLength(0); i++)
+        {
+            for (int j = 0; j < weights.GetLength(1); j++)
+            {
+                velocity[i, j] = (rand.NextDouble() * 0.2) - 0.1; // Range: [-0.1, 0.1]
+            }
+        }
+        return velocity;
+    }
+
+    public double[] InitializeVelocity(double[] biases)
+    {
+        Random rand = new Random();
+        double[] velocity = new double[biases.Length];
+
+        for (int i = 0; i < biases.Length; i++)
+        {
+            velocity[i] = (rand.NextDouble() * 0.2) - 0.1; // Range: [-0.1, 0.1]
+        }
+        return velocity;
     }
 }
