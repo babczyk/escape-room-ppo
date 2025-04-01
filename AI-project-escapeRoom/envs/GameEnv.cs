@@ -13,7 +13,7 @@ using System.Collections.Generic;
 class GameEnvironment
 {
     private Game1 game;
-    private int maxSteps = 50000;
+    private int maxSteps = 20000;
     private int currentStep;
     public List<int> PlayerMove;
 
@@ -151,7 +151,7 @@ class GameEnvironment
             currentStep = 0;
         }
 
-        Thread.Sleep(1);
+        //Thread.Sleep(1);
         return (GetState(), reward, IsDone);
     }
 

@@ -71,6 +71,12 @@ class PPO
     private double[] valueRunningMean;      // Running means for each layer
     private double[] valueRunningVar;       // Running variances for each layer
 
+    // Declare velocity matrices (same size as weights)
+    private double[,] velocityPW1;
+    private double[,] velocityPW2;
+    private double[,] velocityPW3;
+    private double[,] velocityPWOutput;
+
     private int stateSize;
     private int actionSize;
 
@@ -153,6 +159,12 @@ class PPO
                 valueBatchNormBeta[i][j] = 0.0;
             }
         }
+
+        // Initialize them with zeros (same size as corresponding weight matrices)
+        velocityPW1 = new double[policyWeights1.GetLength(0), policyWeights1.GetLength(1)];
+        velocityPW2 = new double[policyWeights2.GetLength(0), policyWeights2.GetLength(1)];
+        velocityPW3 = new double[policyWeights3.GetLength(0), policyWeights3.GetLength(1)];
+        velocityPWOutput = new double[policyWeightsOutput.GetLength(0), policyWeightsOutput.GetLength(1)];
     }
 
     /// <summary>
@@ -181,14 +193,10 @@ class PPO
         // Output layer - typically no BatchNorm on output layer
         var output = helper.LinearLayer(layer3, policyWeightsOutput, policyOutputBias);
 
-        double maxLogit = output.Max();
-        for (int i = 0; i < output.Length; i++)
-        {
-            output[i] -= maxLogit;
-            output[i] /= 0.8;  // Lower temperature for more confidence
-        }
+
 
         var probabilities = helper.Softmax(output);
+        Console.WriteLine($"Probabilities: {string.Join(", ", probabilities)}");
         return probabilities;
     }
 
@@ -447,6 +455,7 @@ class PPO
 
             // Track metrics
             episodeRewards.Add(totalReward);
+
             totalRewardInEpisode = totalReward;
             averageReward = episodeRewards.TakeLast(50).Average(); //take an avrege of 50 episodes (50 generations)
             // Log progress
@@ -642,7 +651,7 @@ class PPO
             RecentRewards = existingProgress.GetProperty("RecentRewards").EnumerateArray()
                                             .Select(e => e.GetDouble())
                                             .ToList()
-                                            .Concat(recentRewards)
+                                            .Concat(recentRewards.TakeLast(1))
                                             .ToList()
         };
         var json = JsonSerializer.Serialize(progress);
@@ -650,19 +659,19 @@ class PPO
     }
 
 
-    private void UpdateNetworkWeights(double totalLoss)
+    private void UpdateNetworkWeights(double PolicyLoss, double ValueLoss, double entropyBonus)
     {
         // Calculate gradients and update policy network weights
-        UpdatePolicyNetworkWeights(totalLoss);
+        // Update policy & value networks separately
+        UpdatePolicyNetworkWeights(PolicyLoss, entropyBonus);
+        UpdateValueNetworkWeights(ValueLoss);
 
-        // Calculate gradients and update value network weights
-        UpdateValueNetworkWeights(totalLoss);
-
-        //update bias
-        UpdateBiases(totalLoss);
+        // Update policy & value biases separately
+        UpdatePolicyBiases(PolicyLoss);
+        UpdateValueBiases(ValueLoss);
 
     }
-    private void UpdateBiases(double loss)
+    private void UpdatePolicyBiases(double loss)
     {
         // Learning rate with decay
         double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
@@ -717,7 +726,62 @@ class PPO
         }
     }
 
-    private void UpdatePolicyNetworkWeights(double loss)
+    private void UpdateValueBiases(double loss)
+    {
+        // Learning rate with decay
+        double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
+
+        // Update value network layer 1
+        for (int i = 0; i < valueBias1.Length; i++)
+        {
+            // Gradient descent update with momentum
+            double gradient = loss * helper.CalculateLayerGradient(valueBias1[i]);
+            double momentum = 0.9 * valueBias1[i];
+            double update = currentLearningRate * (gradient + momentum);
+
+            // Update weight with gradient clipping
+            update = Math.Clamp(update, -1.0, 1.0);
+            valueBias1[i] -= update;
+
+            // Store gradient for momentum
+            //valueWeights1[i, j] = gradient;
+        }
+
+        // Update value network layer 2
+        for (int i = 0; i < valueBias2.Length; i++)
+        {
+            double gradient = loss * helper.CalculateLayerGradient(valueBias2[i]);
+            double momentum = 0.9 * valueBias2[i];
+            double update = currentLearningRate * (gradient + momentum);
+            update = Math.Clamp(update, -1.0, 1.0);
+            valueBias2[i] -= update;
+            //valueWeights2[i, j] = gradient;
+        }
+
+        // Update value network layer 3
+        for (int i = 0; i < valueBias3.Length; i++)
+        {
+            double gradient = loss * helper.CalculateLayerGradient(valueBias3[i]);
+            double momentum = 0.9 * valueBias3[i];
+            double update = currentLearningRate * (gradient + momentum);
+            update = Math.Clamp(update, -1.0, 1.0);
+            valueBias3[i] -= update;
+            //valueWeights3[i, j] = gradient;
+        }
+
+        // Update value output weights
+        for (int i = 0; i < valueOutputBias.Length; i++)
+        {
+            double gradient = loss * helper.CalculateOutputGradient(valueOutputBias[i]);
+            double momentum = 0.9 * valueOutputBias[i];
+            double update = currentLearningRate * (gradient + momentum);
+            update = Math.Clamp(update, -1.0, 1.0);
+            valueOutputBias[i] -= update;
+            //valueOutputWeights[i] = gradient;
+        }
+    }
+
+    private void UpdatePolicyNetworkWeights(double loss, double entropyBonus)
     {
         // Learning rate with decay
         double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
@@ -727,17 +791,10 @@ class PPO
         {
             for (int j = 0; j < policyWeights1.GetLength(1); j++)
             {
-                // Gradient descent update with momentum
-                double gradient = loss * helper.CalculateLayerGradient(policyWeights1[i, j]);
-                double momentum = 0.9 * policyWeights1[i, j];
-                double update = currentLearningRate * (gradient + momentum);
-
-                // Update weight with gradient clipping
-                update = Math.Clamp(update, -1.0, 1.0);
-                policyWeights1[i, j] -= update;
-
-                // Store gradient for momentum
-                //policyWeights1[i, j] = gradient;
+                double gradient = helper.ComputePPOGradient(policyWeights1[i, j], loss, entropyBonus);
+                velocityPW1[i, j] = 0.9 * velocityPW1[i, j] + 0.1 * gradient; // Apply momentum
+                double clippedUpdate = helper.ClipGradient(velocityPW1[i, j]);
+                policyWeights1[i, j] -= currentLearningRate * clippedUpdate;
             }
         }
 
@@ -746,12 +803,10 @@ class PPO
         {
             for (int j = 0; j < policyWeights2.GetLength(1); j++)
             {
-                double gradient = loss * helper.CalculateLayerGradient(policyWeights2[i, j]);
-                double momentum = 0.9 * policyWeights2[i, j];
-                double update = currentLearningRate * (gradient + momentum);
-                update = Math.Clamp(update, -1.0, 1.0);
-                policyWeights2[i, j] -= update;
-                //policyWeights2[i, j] = gradient;
+                double gradient = helper.ComputePPOGradient(policyWeights2[i, j], loss, entropyBonus);
+                velocityPW2[i, j] = 0.9 * velocityPW2[i, j] + 0.1 * gradient;
+                double clippedUpdate = helper.ClipGradient(velocityPW2[i, j]);
+                policyWeights2[i, j] -= currentLearningRate * clippedUpdate;
             }
         }
 
@@ -760,12 +815,10 @@ class PPO
         {
             for (int j = 0; j < policyWeights3.GetLength(1); j++)
             {
-                double gradient = loss * helper.CalculateLayerGradient(policyWeights3[i, j]);
-                double momentum = 0.9 * policyWeights3[i, j];
-                double update = currentLearningRate * (gradient + momentum);
-                update = Math.Clamp(update, -1.0, 1.0);
-                policyWeights3[i, j] -= update;
-                //policyWeights3[i, j] = gradient;
+                double gradient = helper.ComputePPOGradient(policyWeights3[i, j], loss, entropyBonus);
+                velocityPW3[i, j] = 0.9 * velocityPW3[i, j] + 0.1 * gradient;
+                double clippedUpdate = helper.ClipGradient(velocityPW3[i, j]);
+                policyWeights3[i, j] -= currentLearningRate * clippedUpdate;
             }
         }
 
@@ -774,14 +827,15 @@ class PPO
         {
             for (int j = 0; j < policyWeightsOutput.GetLength(1); j++)
             {
-                double gradient = loss * helper.CalculateOutputGradient(policyWeightsOutput[i, j]);
-                double momentum = 0.9 * policyWeightsOutput[i, j];
-                double update = currentLearningRate * (gradient + momentum);
-                update = Math.Clamp(update, -1.0, 1.0);
-                policyWeightsOutput[i, j] -= update;
+                double gradient = helper.ComputePPOGradient(policyWeightsOutput[i, j], loss, entropyBonus);
+                velocityPWOutput[i, j] = 0.9 * velocityPWOutput[i, j] + 0.1 * gradient;
+                double clippedUpdate = helper.ClipGradient(velocityPWOutput[i, j]);
+                policyWeightsOutput[i, j] -= currentLearningRate * clippedUpdate;
             }
         }
     }
+
+
 
     /// <summary>
     /// Updates the weights of the value network using gradient descent with momentum.
@@ -867,57 +921,64 @@ class PPO
     /// <param name="rewards">List of rewards received</param>
     private void UpdateNetworksBatch(TrajectoryData trajectory, List<int> batchIndices)
     {
-        double policyLoss = 0;
-        double valueLoss = 0;
+        double totalPolicyLoss = 0;
+        double totalValueLoss = 0;
         double entropySum = 0;
+        double entropyBonus = ENTROPY_COEF; // Use the current entropy coefficient
 
         foreach (int idx in batchIndices)
         {
+
             var currentProbs = PolicyForward(trajectory.states[idx]);
-            double ratio = currentProbs[trajectory.actions[idx]];
+            entropyBonus = helper.CalculateEntropyBonus(currentProbs); // Calculate entropy bonus for the current batch
+            // Calculate the ratio of new vs old policy
+            double oldProb = trajectory.oldActionProbs[idx];
+            double newProb = currentProbs[trajectory.actions[idx]];
+            double ratio = newProb / oldProb;  // This is the correct ratio calculation
 
             // Policy loss with clipping
             double advantage = trajectory.advantages[idx];
-            double unclippedLoss = ratio * advantage;
-            double clippedLoss = Math.Clamp(ratio, 1 - CLIP_EPSILON, 1 + CLIP_EPSILON) * advantage;
-            policyLoss = -Math.Min(unclippedLoss, clippedLoss);
+            double unclippedSurrogate = ratio * advantage;
+            double clippedSurrogate = Math.Clamp(ratio, 1 - CLIP_EPSILON, 1 + CLIP_EPSILON) * advantage;
+            double policyLossForIdx = -Math.Min(unclippedSurrogate, clippedSurrogate);
 
             // Value loss
             double returns = advantage + trajectory.values[idx];
             double valueEstimate = ValueForward(trajectory.states[idx]);
-            valueLoss += Math.Pow(valueEstimate - returns, 2);
 
-            if (policyLoss > 1e10 || valueLoss > 1e10)
+            double valueLossForIdx = Math.Pow(valueEstimate - returns, 2);
+            totalValueLoss += valueLossForIdx; // Accumulate value loss properly
+
+            if (policyLossForIdx > 1e10 || valueLossForIdx > 1e10)
             {
                 Console.WriteLine("Loss too large, check gradients!");
             }
-            // Calculate entropy for this distribution
-            // Correct entropy calculation
+
+            // Entropy calculation
             double Entropy = -currentProbs.Sum(p => p * Math.Log(Math.Max(p, 1e-6)));
-            entropySum += Entropy; // Accumulate for batch
+            entropySum += Entropy;
         }
 
-        // Average losses
+        // Average the accumulated losses over batch size
         int batchSize = batchIndices.Count;
-        policyLoss /= batchSize;
-        valueLoss /= batchSize;
+        double policyLoss = totalPolicyLoss / batchSize;
+        double valueLoss = totalValueLoss / batchSize;
         double entropy = entropySum / batchSize;
 
-        // Dynamic entropy coefficient - decay over time but maintain minimum exploration
+        // Adjust entropy coefficient dynamically
         if (entropy > 1.5)
-            ENTROPY_COEF *= 0.99;  // Faster decay if too high
+            ENTROPY_COEF *= 0.99;  // Faster decay if entropy is too high
         else
-            ENTROPY_COEF *= 0.999; // Slower decay if already low
+            ENTROPY_COEF *= 0.999; // Slower decay if entropy is already low
 
-        ENTROPY_COEF = Math.Max(0.0001, ENTROPY_COEF);
+        ENTROPY_COEF = Math.Max(0.0001, ENTROPY_COEF); // Ensure minimum exploration
 
         // Track metrics
         policyLosses.Add(policyLoss);
         valueLosses.Add(valueLoss);
         entropyValues.Add(entropy);
 
-        // Apply updates - only add the entropy term if entropy is below target
-        double totalLoss = policyLoss + VALUE_COEF * valueLoss + ENTROPY_COEF * entropy;
-        UpdateNetworkWeights(totalLoss);
+        // Compute total loss with entropy term
+        UpdateNetworkWeights(policyLoss, valueLoss, entropyBonus);
     }
 }

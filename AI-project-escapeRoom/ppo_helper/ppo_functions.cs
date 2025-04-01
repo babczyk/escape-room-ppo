@@ -75,10 +75,10 @@ class PPOHelper
     /// </summary>
     /// <param name="x">Input logits</param>
     /// <returns>Probability distribution that sums to 1</returns>
-    public double[] Softmax(double[] logits, double temperature = 1.5)
+    public double[] Softmax(double[] logits)
     {
         double maxLogit = logits.Max(); // Prevents numerical instability
-        double[] expValues = logits.Select(l => Math.Exp((l - maxLogit) / temperature)).ToArray();
+        double[] expValues = logits.Select(l => Math.Exp((l - maxLogit))).ToArray();
         double sumExp = expValues.Sum();
         return expValues.Select(e => e / sumExp).ToArray();
     }
@@ -158,9 +158,8 @@ class PPOHelper
     /// <returns>Chosen action index</returns>
     public int SampleAction(double[] actionProbs, bool isTraining = true)
     {
-        double temperature = 1.5; // Adjust temperature scaling (higher = more randomness)
 
-        double[] scaledProbs = actionProbs.Select(p => Math.Pow(p, 1 / temperature)).ToArray();
+        double[] scaledProbs = actionProbs.Select(p => Math.Pow(p, 1)).ToArray();
         double sum = scaledProbs.Sum();
         double[] normalizedProbs = scaledProbs.Select(p => p / sum).ToArray();
 
@@ -195,5 +194,39 @@ class PPOHelper
         double weightDecay = 0.0001 * weight;
 
         return weight + noise + weightDecay;
+    }
+
+    public double CalculateEntropyBonus(double[] actionProbabilities)
+    {
+        double entropy = 0.0;
+
+        // Iterate over action probabilities to compute entropy
+        foreach (double prob in actionProbabilities)
+        {
+            if (prob > 0)  // Avoid log(0)
+            {
+                entropy -= prob * Math.Log(prob);  // Entropy = -ΣP(a_i) log(P(a_i))
+            }
+        }
+
+        return entropy;  // Return the entropy value
+    }
+
+    // Computes the PPO gradient with entropy regularization
+    public double ComputePPOGradient(double weight, double loss, double entropyBonus)
+    {
+        double entropyTerm = entropyBonus * Math.Log(Math.Abs(weight) + 1e-8); // Entropy regularization
+        return loss * (weight + entropyTerm);
+    }
+
+    // Applies gradient norm clipping to prevent exploding gradients
+    public double ClipGradient(double gradient)
+    {
+        double maxNorm = 1.0;  // Set the max allowed gradient norm
+        if (Math.Abs(gradient) > maxNorm)
+        {
+            return Math.Sign(gradient) * maxNorm;
+        }
+        return gradient;
     }
 }
