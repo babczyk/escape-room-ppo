@@ -683,11 +683,7 @@ class PPO
         {
             Episode = episode,
             BestReward = existingProgress.GetProperty("BestReward").GetDouble() < bestReward ? bestReward : existingProgress.GetProperty("BestReward").GetDouble(),
-            RecentRewards = existingProgress.GetProperty("RecentRewards").EnumerateArray()
-                                            .Select(e => e.GetDouble())
-                                            .ToList()
-                                            .Concat(recentRewards.TakeLast(1))
-                                            .ToList()
+            RecentRewards = recentRewards
         };
         var json = JsonSerializer.Serialize(progress);
         File.WriteAllText(filePath, json);
