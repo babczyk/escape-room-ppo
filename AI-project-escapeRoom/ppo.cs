@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using AI_project_escapeRoom;
 using MathNet.Numerics.LinearAlgebra;
 
 namespace PPOReinforcementLearning
@@ -509,18 +510,20 @@ namespace PPOReinforcementLearning
     /// </summary>
     public class PPOTrainer
     {
-        private IEnvironment environment;
+        private Game1 game;
         private PPOAgent agent;
         private int maxEpisodes;
         private int stepsPerEpisode;
         private int trainInterval;
+        private GameEnvironment gameEnv;
 
-        public PPOTrainer(IEnvironment environment, int stateSize, int actionSize, int maxEpisodes = 1000, int stepsPerEpisode = 2000, int trainInterval = 2000)
+        public PPOTrainer(Game1 game, int stateSize, int actionSize, int maxEpisodes = 1000, int stepsPerEpisode = 2000, int trainInterval = 2000)
         {
-            this.environment = environment;
+            this.game = game;
             this.maxEpisodes = maxEpisodes;
             this.stepsPerEpisode = stepsPerEpisode;
             this.trainInterval = trainInterval;
+            this.gameEnv = new GameEnvironment(game);
 
             agent = new PPOAgent(stateSize, actionSize);
         }
@@ -532,7 +535,7 @@ namespace PPOReinforcementLearning
 
             for (int episode = 0; episode < maxEpisodes; episode++)
             {
-                Vector<float> state = environment.Reset();
+                Vector<float> state = gameEnv.GetState();
                 float episodeReward = 0;
 
                 for (int step = 0; step < stepsPerEpisode; step++)
@@ -545,7 +548,7 @@ namespace PPOReinforcementLearning
                     float value = agent.GetValue(state);
 
                     // Take action in environment
-                    var (nextState, reward, done) = environment.Step(action);
+                    var (nextState, reward, done) = gameEnv.Step(action);
 
                     // Store experience
                     experiences.Add(new Experience
@@ -663,7 +666,7 @@ namespace PPOReinforcementLearning
             int stepsPerEpisode = 2000; // As per your requirement
 
             // Create environment (replace with your environment)
-            IEnvironment environment = new YourEnvironment(stateSize, actionSize);
+            GameEnvironment environment = new GameEnvironment(stateSize, actionSize);
 
             // Create and run PPO trainer
             PPOTrainer trainer = new PPOTrainer(

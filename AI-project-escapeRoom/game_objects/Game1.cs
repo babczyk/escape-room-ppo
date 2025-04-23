@@ -6,6 +6,7 @@ using System;
 using System.Threading.Tasks;
 using System.Threading;
 using System.Collections.Generic;
+using PPOReinforcementLearning;
 
 namespace AI_project_escapeRoom
 {
@@ -16,7 +17,7 @@ namespace AI_project_escapeRoom
 
         // Training components
         private GameEnvironment gameEnvironment;
-        private PPO ppo;
+        private PPOTrainer ppo;
         private Task trainingTask;
         private CancellationTokenSource cancellationSource;
         private bool isTraining = true;
@@ -78,7 +79,7 @@ namespace AI_project_escapeRoom
 
             // Initialize training components
             gameEnvironment = new GameEnvironment(this);
-            ppo = new PPO();
+            ppo = new PPOTrainer();
 
             if (isTraining)
             {

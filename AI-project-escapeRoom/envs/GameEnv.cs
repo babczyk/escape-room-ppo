@@ -9,6 +9,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Collections.Generic;
+using MathNet.Numerics.LinearAlgebra;
 
 class GameEnvironment
 {
@@ -17,15 +18,15 @@ class GameEnvironment
     private int currentStep;
     public List<int> PlayerMove;
 
-    public double pick_the_box = 1;
-    public double place_the_box_good = 5;
-    public double finish_reward = 10;
+    public float pick_the_box = 1;
+    public float place_the_box_good = 5;
+    public float finish_reward = 10;
 
-    public double droping_box_bad = -2;
-    public double culide_with_wall = -1;
-    public double repeating_actions = -1;
-    public double time_panalty = -0.5;
-    public double max_steps_panalty = -5;
+    public float droping_box_bad = -2;
+    public float culide_with_wall = -1;
+    public float repeating_actions = -1;
+    public float time_panalty = -0.5f;
+    public float max_steps_panalty = -5;
 
     public GameEnvironment(Game1 game)
     {
@@ -34,31 +35,35 @@ class GameEnvironment
         this.PlayerMove = new List<int>();
     }
 
-    public double[] GetState()
+    public Vector<float> GetState()
     {
-        return new double[]
-        {
-        game.player.Position.X / game.widthLevel,
-        game.player.Position.Y / game.groundLevel,
-        game.box.Position.X / game.widthLevel,
-        game.box.Position.Y / game.groundLevel,
-        game.button.Position.X / game.widthLevel,
-        game.button.Position.Y / game.groundLevel,
-        game.door.Position.X / game.widthLevel,
-        game.door.Position.Y / game.groundLevel,
-        game.player.heldBox != null ? 1.0 : 0.0,
-        game.IsPressed ? 1.0 : 0.0,
-        game.IsOpen ? 1.0 : 0.0,
-        game.player.Velocity.Length(),
-        Vector2.Distance(game.player.Position, game.box.Position),
-        Vector2.Distance(game.box.Position, game.button.Position)
-        };
+        // Create a list for our state values
+        var stateValues = new List<float>
+    {
+        (float)(game.player.Position.X / game.widthLevel),
+        (float)(game.player.Position.Y / game.groundLevel),
+        (float)(game.box.Position.X / game.widthLevel),
+        (float)(game.box.Position.Y / game.groundLevel),
+        (float)(game.button.Position.X / game.widthLevel),
+        (float)(game.button.Position.Y / game.groundLevel),
+        (float)(game.door.Position.X / game.widthLevel),
+        (float)(game.door.Position.Y / game.groundLevel),
+        game.player.heldBox != null ? 1.0f : 0.0f,
+        game.IsPressed ? 1.0f : 0.0f,
+        game.IsOpen ? 1.0f : 0.0f,
+        (float)game.player.Velocity.Length(),
+        (float)Vector2.Distance(game.player.Position, game.box.Position),
+        (float)Vector2.Distance(game.box.Position, game.button.Position)
+    };
+
+        // Convert to Vector<float>
+        return Vector<float>.Build.DenseOfArray(stateValues.ToArray());
     }
 
-    public (double[], double, bool) Step(int action)
+    public (Vector<float>, float, bool) Step(int action)
     {
         currentStep++;
-        double reward = 0;
+        float reward = 0;
         bool IsDone = false;
 
         // Apply action
@@ -99,7 +104,7 @@ class GameEnvironment
         if (game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null
         || game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null)
         {
-            reward += 0.2;
+            reward += 0.2f;
         }
 
         ///////////////////////////////
@@ -139,7 +144,7 @@ class GameEnvironment
         if (!game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null
         || !game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null)
         {
-            reward -= 0.1;
+            reward -= 0.1f;
         }
 
         // Maximum steps penalty
@@ -162,7 +167,7 @@ class GameEnvironment
                obj.Position.Y < game.cameraPosition.Y || obj.Position.Y > game.cameraPosition.Y + game.ScreenHeight;
     }
 
-    private void ResetPlayerAndBox()
+    public void ResetPlayerAndBox()
     {
         ResetPlayerPosition();
         ResetBoxPosition();
