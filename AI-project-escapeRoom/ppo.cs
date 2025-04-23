@@ -227,11 +227,12 @@ class PPO
         var output = helper.LinearLayer(layer3, policyWeightsOutput, policyOutputBias);
 
         var maxlogits = output.Max();
+        double explorationScale = Math.Max(0.1, 1.0 - curentEpisode * 0.001); // Decays over time
+
         for (int i = 0; i < output.Length; i++)
         {
-            output[i] -= maxlogits; // Subtract maxlogits for numerical stability
+            output[i] *= explorationScale; // Subtract maxlogits for numerical stability
         }
-
 
         var probabilities = helper.Softmax(output);
         return probabilities;
@@ -303,30 +304,32 @@ class PPO
     /// <param name="rewards">List of rewards from the episode</param>
     /// <param name="values">List of estimated state values</param>
     /// <returns>List of normalized advantages</returns>
-    private List<double> ComputeAdvantages(List<Double> rewards, List<double> values)
+    private List<double> ComputeAdvantages(List<double> rewards, List<double> values)
     {
         List<double> advantages = new List<double>();
         double nextValue = 0;
         double advantage = 0;
+        const double LAMBDA = 0.95;
 
         for (int t = rewards.Count - 1; t >= 0; t--)
         {
             double delta = rewards[t] + GAMMA * nextValue - values[t];
-            advantage = delta + GAMMA * 0.95f * advantage;
-            advantages.Insert(0, advantage);
+            advantage = delta + GAMMA * LAMBDA * advantage;
+            advantages.Add(advantage);
             nextValue = values[t];
         }
+
+        advantages.Reverse(); // Reverse at the end instead of using Insert(0, value)
 
         // Normalize advantages
         if (advantages.Count > 0)
         {
             double mean = advantages.Average();
-            double std = Math.Sqrt(advantages.Select(x => Math.Pow(x - mean, 2)).Average() + 1e-5);
+            double std = Math.Sqrt(advantages.Average(x => Math.Pow(x - mean, 2)) + 1e-5);
             return advantages.Select(a => (a - mean) / std).ToList();
         }
         return advantages;
     }
-
     /// <summary>
     /// Computes a forward pass through the value network to estimate state value.
     /// </summary>
@@ -338,17 +341,17 @@ class PPO
         // First layer
         var z1 = helper.LinearLayer(input, valueWeights1, valueBias1);
         var bn1 = BatchNormalizeValue(z1, 0, isTraining); // Layer index 0
-        var layer1 = helper.LeakyReLU(bn1);
+        var layer1 = helper.ELU(bn1);
 
         // Second layer
         var z2 = helper.LinearLayer(layer1, valueWeights2, valueBias2);
         var bn2 = BatchNormalizeValue(z2, 1, isTraining); // Layer index 1
-        var layer2 = helper.LeakyReLU(bn2);
+        var layer2 = helper.ELU(bn2);
 
         // Third layer
         var z3 = helper.LinearLayer(layer2, valueWeights3, valueBias3);
         var bn3 = BatchNormalizeValue(z3, 2, isTraining); // Layer index 2
-        var layer3 = helper.LeakyReLU(bn3);
+        var layer3 = helper.ELU(bn3);
 
         // Output layer - typically no BatchNorm on output layer for value function
         var output = helper.LinearLayer(layer3, valueWeightsOutput, valueOutputBias);
@@ -470,6 +473,7 @@ class PPO
             var progress = LoadProgress(progressPath);
             episode = progress.episode;
             bestReward = progress.bestReward;
+            LoadModel(modelPath);
         }
         for (; episode < episodes; episode++)
         {
@@ -510,7 +514,6 @@ class PPO
                 bestReward = averageReward;
                 Console.WriteLine("Saving best model...");
                 SaveModel(modelPath, episode);
-                LoadModel(modelPath);
                 episodesSinceImprovement = 0;
             }
             else
@@ -696,13 +699,12 @@ class PPO
     {
         // Calculate gradients and update policy network weights
         // Update policy & value networks separately
-        UpdatePolicyNetworkWeights(PolicyLoss, entropyBonus);
+        UpdatePolicyNetworkWeights(PolicyLoss);
         UpdateValueNetworkWeights(ValueLoss);
 
         // Update policy & value biases separately
         UpdatePolicyBiases(PolicyLoss);
         UpdateValueBiases(ValueLoss);
-
     }
     private void UpdatePolicyBiases(double loss)
     {
@@ -939,11 +941,16 @@ class PPO
 
             // Policy loss with clipping
             double advantage = trajectory.advantages[idx];
+            Console.WriteLine($"Advantage: {advantage}");
 
             double unclippedSurrogate = ratio * advantage;
             double clippedSurrogate = Math.Clamp(ratio, 1 - CLIP_EPSILON, 1 + CLIP_EPSILON) * advantage;
             double policyLossForIdx = -Math.Min(unclippedSurrogate, clippedSurrogate);
             totalPolicyLoss += policyLossForIdx;
+            if (advantage < 0)
+            {
+                policyLossForIdx = -Math.Max(unclippedSurrogate, clippedSurrogate);
+            }
 
             // Value loss
             double returns = advantage + trajectory.values[idx];
@@ -980,7 +987,9 @@ class PPO
         policyLosses.Add(policyLoss);
         valueLosses.Add(valueLoss);
         entropyValues.Add(entropy);
+        double entropyTemp = entropySum / batchSize;
+        double fullpolicyLoss = policyLoss - ENTROPY_COEF * entropy;
         // Compute total loss with entropy term
-        UpdateNetworkWeights(policyLoss, valueLoss, entropyBonus);
+        UpdateNetworkWeights(fullpolicyLoss, valueLoss, entropyBonus);
     }
 }

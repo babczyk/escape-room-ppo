@@ -66,6 +66,21 @@ bias_plot <- ggplot(
   theme_minimal() +
   labs(title = "Bias Evolution Across Layers", x = "Episode", y = "Bias Value")
 
+
+# Output bias
+Output_bias_df <- data.frame(
+  Episode = seq_along(prog$POLICY_OUTPUT_BIAS),
+  OutputBias = prog$POLICY_OUTPUT_BIAS
+)
+
+Output_bias_plot <- ggplot(
+  Output_bias_df,
+  aes(x = Episode, y = OutputBias)
+) +
+  geom_line(color = "blue", size = 1) +
+  theme_minimal() +
+  labs(title = "Output Bias Evolution", x = "Episode", y = "Output Bias Value")
+
 # 📌 Arrange all plots together
 grid.arrange(policy1_plot,
   policy2_plot,
@@ -73,6 +88,7 @@ grid.arrange(policy1_plot,
   policyOutput_plot,
   reward_plot,
   bias_plot,
+  Output_bias_plot,
   ncol = 3,
   nrow = 3
 )

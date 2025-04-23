@@ -39,13 +39,20 @@ class PPOHelper
     /// <returns>Output vector after linear transformation</returns>
     public double[] LinearLayer(double[] input, double[,] weights, double[]? biasWeights = null)
     {
+        int inputSize = weights.GetLength(0);
         int outputSize = weights.GetLength(1);
+
+        if (input.Length != inputSize)
+            throw new ArgumentException("Input length does not match weight dimensions.");
+
         double[] output = new double[outputSize];
 
         for (int i = 0; i < outputSize; i++)
         {
-            for (int j = 0; j < input.Length; j++)
+            for (int j = 0; j < inputSize; j++)
+            {
                 output[i] += input[j] * weights[j, i];
+            }
 
             if (biasWeights != null)
                 output[i] += biasWeights[i];
@@ -64,12 +71,10 @@ class PPOHelper
     {
         return input.Select(x => x > 0 ? x : alpha * x).ToArray();
     }
-
     public double[] ELU(double[] input, double alpha = 1.0)
     {
         return input.Select(x => (x > 0) ? x : alpha * (Math.Exp(x) - 1)).ToArray();
     }
-
     /// <summary>
     /// Applies the softmax function to convert logits to probabilities.
     /// </summary>
@@ -158,21 +163,27 @@ class PPOHelper
     /// <returns>Chosen action index</returns>
     public int SampleAction(double[] actionProbs, bool isTraining = true)
     {
+        // Apply temperature scaling if training
+        double temperature = isTraining ? 1.0 : 0.5; // Lower temperature during evaluation
 
-        double[] scaledProbs = actionProbs.Select(p => Math.Pow(p, 1)).ToArray();
-        double sum = scaledProbs.Sum();
-        double[] normalizedProbs = scaledProbs.Select(p => p / sum).ToArray();
+        if (temperature != 1.0)
+        {
+            // Apply temperature scaling
+            double[] scaledProbs = actionProbs.Select(p => Math.Pow(p, 1 / temperature)).ToArray();
+            double sum = scaledProbs.Sum();
+            actionProbs = scaledProbs.Select(p => p / sum).ToArray();
+        }
 
         double sample = random.NextDouble();
         double cumulative = 0;
 
-        for (int i = 0; i < normalizedProbs.Length; i++)
+        for (int i = 0; i < actionProbs.Length; i++)
         {
-            cumulative += normalizedProbs[i];
+            cumulative += actionProbs[i];
             if (sample <= cumulative)
                 return i;
         }
-        return normalizedProbs.Length - 1; // Fallback
+        return actionProbs.Length - 1; // Fallback
     }
 
     public double CalculateLayerGradient(double weight)
@@ -200,22 +211,22 @@ class PPOHelper
     {
         double entropy = 0.0;
 
-        // Iterate over action probabilities to compute entropy
+        // Calculate entropy: -Σ P(a) * log(P(a))
         foreach (double prob in actionProbabilities)
         {
-            if (prob > 0)  // Avoid log(0)
+            if (prob > 1e-10)  // Avoid log(0), use small epsilon
             {
-                entropy -= prob * Math.Log(prob);  // Entropy = -ΣP(a_i) log(P(a_i))
+                entropy -= prob * Math.Log(prob);
             }
         }
 
-        return entropy;  // Return the entropy value
+        return entropy;
     }
 
     // Computes the PPO gradient with entropy regularization
     public double ComputePPOGradient(double weight, double loss, double entropyBonus)
     {
-        double entropyTerm = entropyBonus > 0 ? entropyBonus : 1 * Math.Log(Math.Abs(weight) + 1e-8); // Entropy regularization
+        double entropyTerm = entropyBonus > 0 ? entropyBonus : 0; // Entropy regularization
         return loss * (weight + entropyTerm);
     }
 
