@@ -95,6 +95,14 @@ class PPO
     private int stateSize;
     private int actionSize;
 
+    // Add these fields to your PPO class
+    private double[][] gradBatchNormGamma;    // Policy network gamma gradients
+    private double[][] gradBatchNormBeta;     // Policy network beta gradients
+    private double[][] gradValueBatchNormGamma;  // Value network gamma gradients
+    private double[][] gradValueBatchNormBeta;   // Value network beta gradients
+
+    AdamOptimizer adam = new AdamOptimizer(LEARNING_RATE, 0.9, 0.999, 1e-8);
+
     private PPOHelper helper = new PPOHelper();
 
     /// <summary>
@@ -198,6 +206,23 @@ class PPO
         velocityBVW2 = helper.InitializeVelocity(valueBias2);
         velocityBVW3 = helper.InitializeVelocity(valueBias3);
         velocityBVWOutput = helper.InitializeVelocity(valueOutputBias);
+
+        // In your PPO constructor, after initializing batchNormGamma and batchNormBeta
+        gradBatchNormGamma = new double[3][];
+        gradBatchNormBeta = new double[3][];
+        gradValueBatchNormGamma = new double[3][];
+        gradValueBatchNormBeta = new double[3][];
+
+        for (int i = 0; i < 3; i++)
+        {
+            int layerSize = (i == 0) ? HIDDEN_LAYER_1_SIZE :
+                            (i == 1) ? HIDDEN_LAYER_2_SIZE : HIDDEN_LAYER_3_SIZE;
+
+            gradBatchNormGamma[i] = new double[layerSize];
+            gradBatchNormBeta[i] = new double[layerSize];
+            gradValueBatchNormGamma[i] = new double[layerSize];
+            gradValueBatchNormBeta[i] = new double[layerSize];
+        }
     }
 
     /// <summary>
@@ -226,8 +251,7 @@ class PPO
         // Output layer - typically no BatchNorm on output layer
         var output = helper.LinearLayer(layer3, policyWeightsOutput, policyOutputBias);
 
-        var maxlogits = output.Max();
-        double explorationScale = Math.Max(0.1, 1.0 - curentEpisode * 0.001); // Decays over time
+        double explorationScale = Math.Max(0.05, Math.Exp(-0.002 * curentEpisode));
 
         for (int i = 0; i < output.Length; i++)
         {
@@ -695,7 +719,7 @@ class PPO
     }
 
 
-    private void UpdateNetworkWeights(double PolicyLoss, double ValueLoss, double entropyBonus)
+    private void UpdateNetworkWeights(double PolicyLoss, double ValueLoss)
     {
         // Calculate gradients and update policy network weights
         // Update policy & value networks separately
@@ -708,151 +732,92 @@ class PPO
     }
     private void UpdatePolicyBiases(double loss)
     {
-        // Learning rate with decay
-        double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
-
-        // Update policy network layer 1 biases
         for (int i = 0; i < policyBias1.Length; i++)
         {
             double gradient = loss * helper.CalculateLayerGradient(policyBias1[i]);
-
-            // Apply momentum correction
-            velocityBPW1[i] = 0.9 * velocityBPW1[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBPW1[i], -1.0, 1.0);
-
-            // Update bias using velocity
-            policyBias1[i] -= currentLearningRate * clippedUpdate;
+            ApplyAdamBiasUpdate($"pb1_{i}", policyBias1, i, gradient);
         }
 
-        // Update policy network layer 2 biases
         for (int i = 0; i < policyBias2.Length; i++)
         {
             double gradient = loss * helper.CalculateLayerGradient(policyBias2[i]);
-            velocityBPW2[i] = 0.9 * velocityBPW2[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBPW2[i], -1.0, 1.0);
-            policyBias2[i] -= currentLearningRate * clippedUpdate;
+            ApplyAdamBiasUpdate($"pb2_{i}", policyBias2, i, gradient);
         }
 
-        // Update policy network layer 3 biases
         for (int i = 0; i < policyBias3.Length; i++)
         {
             double gradient = loss * helper.CalculateLayerGradient(policyBias3[i]);
-            velocityBPW3[i] = 0.9 * velocityBPW3[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBPW3[i], -1.0, 1.0);
-            policyBias3[i] -= currentLearningRate * clippedUpdate;
+            ApplyAdamBiasUpdate($"pb3_{i}", policyBias3, i, gradient);
         }
 
-        // Update policy output biases
         for (int i = 0; i < policyOutputBias.Length; i++)
         {
             double gradient = loss * helper.CalculateOutputGradient(policyOutputBias[i]);
-            velocityBPWOutput[i] = 0.9 * velocityBPWOutput[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBPWOutput[i], -1.0, 1.0);
-            policyOutputBias[i] -= currentLearningRate * clippedUpdate;
+            ApplyAdamBiasUpdate($"pbo_{i}", policyOutputBias, i, gradient);
         }
     }
 
     private void UpdateValueBiases(double loss)
     {
-        // Learning rate with decay
-        double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
-
-        // Update value network layer 1 biases
         for (int i = 0; i < valueBias1.Length; i++)
         {
             double gradient = loss * helper.CalculateLayerGradient(valueBias1[i]);
-
-            // Apply momentum correction
-            velocityBVW1[i] = 0.9 * velocityBVW1[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBVW1[i], -1.0, 1.0);
-
-            // Update bias using velocity
-            valueBias1[i] -= currentLearningRate * clippedUpdate;
+            ApplyAdamBiasUpdate($"vb1_{i}", valueBias1, i, gradient);
         }
 
-        // Update value network layer 2 biases
         for (int i = 0; i < valueBias2.Length; i++)
         {
             double gradient = loss * helper.CalculateLayerGradient(valueBias2[i]);
-            velocityBVW2[i] = 0.9 * velocityBVW2[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBVW2[i], -1.0, 1.0);
-            valueBias2[i] -= currentLearningRate * clippedUpdate;
+            ApplyAdamBiasUpdate($"vb2_{i}", valueBias2, i, gradient);
         }
 
-        // Update value network layer 3 biases
         for (int i = 0; i < valueBias3.Length; i++)
         {
             double gradient = loss * helper.CalculateLayerGradient(valueBias3[i]);
-            velocityBVW3[i] = 0.9 * velocityBVW3[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBVW3[i], -1.0, 1.0);
-            valueBias3[i] -= currentLearningRate * clippedUpdate;
+            ApplyAdamBiasUpdate($"vb3_{i}", valueBias3, i, gradient);
         }
 
-        // Update value output biases
         for (int i = 0; i < valueOutputBias.Length; i++)
         {
             double gradient = loss * helper.CalculateOutputGradient(valueOutputBias[i]);
-            velocityBVWOutput[i] = 0.9 * velocityBVWOutput[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBVWOutput[i], -1.0, 1.0);
-            valueOutputBias[i] -= currentLearningRate * clippedUpdate;
+            ApplyAdamBiasUpdate($"vbo_{i}", valueOutputBias, i, gradient);
         }
     }
 
     private void UpdatePolicyNetworkWeights(double loss, double entropyBonus = 0)
     {
-        // Learning rate with decay
-        double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
-
-        // Update policy network layer 1
         for (int i = 0; i < policyWeights1.GetLength(0); i++)
         {
             for (int j = 0; j < policyWeights1.GetLength(1); j++)
             {
-                double gradient = helper.ComputePPOGradient(policyWeights1[i, j], loss, entropyBonus);
-                velocityPW1[i, j] = 0.7 * velocityPW1[i, j] + 0.3 * gradient; // Apply momentum
-                double clippedUpdate = helper.ClipGradient(velocityPW1[i, j]);
-                policyWeights1[i, j] -= currentLearningRate * clippedUpdate;
+                ApplyAdamUpdate($"pw1_{i}_{j}", policyWeights1, i, j, loss, entropyBonus);
             }
         }
 
-        // Update policy network layer 2
         for (int i = 0; i < policyWeights2.GetLength(0); i++)
         {
             for (int j = 0; j < policyWeights2.GetLength(1); j++)
             {
-                double gradient = helper.ComputePPOGradient(policyWeights2[i, j], loss, entropyBonus);
-                velocityPW2[i, j] = 0.7 * velocityPW2[i, j] + 0.3 * gradient;
-                double clippedUpdate = helper.ClipGradient(velocityPW2[i, j]);
-                policyWeights2[i, j] -= currentLearningRate * clippedUpdate;
+                ApplyAdamUpdate($"pw2_{i}_{j}", policyWeights2, i, j, loss, entropyBonus);
             }
         }
 
-        // Update policy network layer 3
         for (int i = 0; i < policyWeights3.GetLength(0); i++)
         {
             for (int j = 0; j < policyWeights3.GetLength(1); j++)
             {
-                double gradient = helper.ComputePPOGradient(policyWeights3[i, j], loss, entropyBonus);
-                velocityPW3[i, j] = 0.7 * velocityPW3[i, j] + 0.3 * gradient;
-                double clippedUpdate = helper.ClipGradient(velocityPW3[i, j]);
-                policyWeights3[i, j] -= currentLearningRate * clippedUpdate;
+                ApplyAdamUpdate($"pw3_{i}_{j}", policyWeights3, i, j, loss, entropyBonus);
             }
         }
 
-        // Update policy output weights
         for (int i = 0; i < policyWeightsOutput.GetLength(0); i++)
         {
             for (int j = 0; j < policyWeightsOutput.GetLength(1); j++)
             {
-                double gradient = helper.ComputePPOGradient(policyWeightsOutput[i, j], loss, entropyBonus);
-                velocityPWOutput[i, j] = 0.7 * velocityPWOutput[i, j] + 0.3 * gradient;
-                double clippedUpdate = helper.ClipGradient(velocityPWOutput[i, j]);
-                policyWeightsOutput[i, j] -= currentLearningRate * clippedUpdate;
+                ApplyAdamUpdate($"pwo_{i}_{j}", policyWeightsOutput, i, j, loss, entropyBonus);
             }
         }
     }
-
-
 
     /// <summary>
     /// Updates the weights of the value network using gradient descent with momentum.
@@ -861,54 +826,70 @@ class PPO
     /// <param name="loss">The loss value used to compute the gradient updates.</param>
     private void UpdateValueNetworkWeights(double loss, double entropyBonus = 0)
     {
-        // Learning rate with decay
-        double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
-
-        // Update policy network layer 1
         for (int i = 0; i < valueWeights1.GetLength(0); i++)
         {
             for (int j = 0; j < valueWeights1.GetLength(1); j++)
             {
-                double gradient = helper.ComputePPOGradient(valueWeights1[i, j], loss, entropyBonus);
-                velocityVW1[i, j] = 0.9 * velocityVW1[i, j] + 0.1 * gradient; // Apply momentum
-                double clippedUpdate = helper.ClipGradient(velocityVW1[i, j]);
-                valueWeights1[i, j] -= currentLearningRate * clippedUpdate;
+                ApplyAdamUpdate($"vw1_{i}_{j}", valueWeights1, i, j, loss, entropyBonus);
             }
         }
 
-        // Update policy network layer 2
         for (int i = 0; i < valueWeights2.GetLength(0); i++)
         {
             for (int j = 0; j < valueWeights2.GetLength(1); j++)
             {
-                double gradient = helper.ComputePPOGradient(valueWeights2[i, j], loss, entropyBonus);
-                velocityVW2[i, j] = 0.9 * velocityVW2[i, j] + 0.1 * gradient;
-                double clippedUpdate = helper.ClipGradient(velocityVW2[i, j]);
-                valueWeights2[i, j] -= currentLearningRate * clippedUpdate;
+                ApplyAdamUpdate($"vw2_{i}_{j}", valueWeights2, i, j, loss, entropyBonus);
             }
         }
 
-        // Update policy network layer 3
         for (int i = 0; i < valueWeights3.GetLength(0); i++)
         {
             for (int j = 0; j < valueWeights3.GetLength(1); j++)
             {
-                double gradient = helper.ComputePPOGradient(valueWeights3[i, j], loss, entropyBonus);
-                velocityVW3[i, j] = 0.9 * velocityVW3[i, j] + 0.1 * gradient;
-                double clippedUpdate = helper.ClipGradient(velocityVW3[i, j]);
-                valueWeights3[i, j] -= currentLearningRate * clippedUpdate;
+                ApplyAdamUpdate($"vw3_{i}_{j}", valueWeights3, i, j, loss, entropyBonus);
             }
         }
 
-        // Update policy output weights
         for (int i = 0; i < valueWeightsOutput.GetLength(0); i++)
         {
             for (int j = 0; j < valueWeightsOutput.GetLength(1); j++)
             {
-                double gradient = helper.ComputePPOGradient(valueWeightsOutput[i, j], loss, entropyBonus);
-                velocityVWOutput[i, j] = 0.9 * velocityVWOutput[i, j] + 0.1 * gradient;
-                double clippedUpdate = helper.ClipGradient(velocityVWOutput[i, j]);
-                valueWeightsOutput[i, j] -= currentLearningRate * clippedUpdate;
+                ApplyAdamUpdate($"vwo_{i}_{j}", valueWeightsOutput, i, j, loss, entropyBonus);
+            }
+        }
+    }
+
+    private void UpdateGammaBetaMatrices()
+    {
+        for (int layer = 0; layer < 3; layer++)
+        {
+            int size = batchNormGamma[layer].Length;
+
+            for (int i = 0; i < size; i++)
+            {
+                // === Policy Gamma ===
+                double[] paramGamma = new double[] { batchNormGamma[layer][i] };
+                double[] gradGamma = new double[] { gradBatchNormGamma[layer][i] };  // You need this gradient
+                adam.Update($"gammaPolicy_{layer}_{i}", paramGamma, gradGamma);
+                batchNormGamma[layer][i] = paramGamma[0];
+
+                // === Policy Beta ===
+                double[] paramBeta = new double[] { batchNormBeta[layer][i] };
+                double[] gradBeta = new double[] { gradBatchNormBeta[layer][i] };    // You need this gradient
+                adam.Update($"betaPolicy_{layer}_{i}", paramBeta, gradBeta);
+                batchNormBeta[layer][i] = paramBeta[0];
+
+                // === Value Gamma ===
+                double[] paramValGamma = new double[] { valueBatchNormGamma[layer][i] };
+                double[] gradValGamma = new double[] { gradValueBatchNormGamma[layer][i] };  // You need this gradient
+                adam.Update($"gammaValue_{layer}_{i}", paramValGamma, gradValGamma);
+                valueBatchNormGamma[layer][i] = paramValGamma[0];
+
+                // === Value Beta ===
+                double[] paramValBeta = new double[] { valueBatchNormBeta[layer][i] };
+                double[] gradValBeta = new double[] { gradValueBatchNormBeta[layer][i] };    // You need this gradient
+                adam.Update($"betaValue_{layer}_{i}", paramValBeta, gradValBeta);
+                valueBatchNormBeta[layer][i] = paramValBeta[0];
             }
         }
     }
@@ -933,7 +914,6 @@ class PPO
         {
 
             var currentProbs = PolicyForward(trajectory.states[idx]);
-            entropyBonus = helper.CalculateEntropyBonus(currentProbs); // Calculate entropy bonus for the current batch
             // Calculate the ratio of new vs old policy
             double oldProb = trajectory.oldActionProbs[idx];
             double newProb = currentProbs[trajectory.actions[idx]];
@@ -941,16 +921,15 @@ class PPO
 
             // Policy loss with clipping
             double advantage = trajectory.advantages[idx];
-            Console.WriteLine($"Advantage: {advantage}");
 
             double unclippedSurrogate = ratio * advantage;
             double clippedSurrogate = Math.Clamp(ratio, 1 - CLIP_EPSILON, 1 + CLIP_EPSILON) * advantage;
-            double policyLossForIdx = -Math.Min(unclippedSurrogate, clippedSurrogate);
+            double surrogate = advantage >= 0
+              ? Math.Min(unclippedSurrogate, clippedSurrogate)
+              : Math.Max(unclippedSurrogate, clippedSurrogate);
+            double policyLossForIdx = -surrogate;
             totalPolicyLoss += policyLossForIdx;
-            if (advantage < 0)
-            {
-                policyLossForIdx = -Math.Max(unclippedSurrogate, clippedSurrogate);
-            }
+
 
             // Value loss
             double returns = advantage + trajectory.values[idx];
@@ -990,6 +969,25 @@ class PPO
         double entropyTemp = entropySum / batchSize;
         double fullpolicyLoss = policyLoss - ENTROPY_COEF * entropy;
         // Compute total loss with entropy term
-        UpdateNetworkWeights(fullpolicyLoss, valueLoss, entropyBonus);
+        UpdateNetworkWeights(fullpolicyLoss, valueLoss * VALUE_COEF);
+    }
+
+    private void ApplyAdamUpdate(string paramName, double[,] weights, int i, int j, double loss, double entropyBonus)
+    {
+        double gradient = helper.ComputePPOGradient(weights[i, j], loss, entropyBonus);
+        double[] grad = new double[] { gradient };
+        double[] param = new double[] { weights[i, j] };
+
+        adam.Update(paramName, param, grad);
+        weights[i, j] = param[0];
+    }
+
+    private void ApplyAdamBiasUpdate(string paramName, double[] biasArray, int i, double gradient)
+    {
+        double[] grad = new double[] { gradient };
+        double[] param = new double[] { biasArray[i] };
+
+        adam.Update(paramName, param, grad);  // or adamValue.Update if using a separate instance
+        biasArray[i] = param[0];
     }
 }
