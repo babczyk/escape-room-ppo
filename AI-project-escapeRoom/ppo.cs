@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using AI_project_escapeRoom;
 using MathNet.Numerics.LinearAlgebra;
@@ -211,10 +213,10 @@ namespace PPOReinforcementLearning
     /// </summary>
     public class PPOAgent
     {
-        private NeuralNetwork actorNetwork;
-        private NeuralNetwork criticNetwork;
-        private AdamOptimizer actorOptimizer;
-        private AdamOptimizer criticOptimizer;
+        public NeuralNetwork actorNetwork;
+        public NeuralNetwork criticNetwork;
+        public AdamOptimizer actorOptimizer;
+        public AdamOptimizer criticOptimizer;
         private int stateSize;
         private int actionSize;
         private float gamma = 0.99f;
@@ -585,7 +587,7 @@ namespace PPOReinforcementLearning
                 // Optionally save the model periodically
                 if ((episode + 1) % 100 == 0)
                 {
-                    // SaveModel(agent, $"ppo_model_episode_{episode + 1}.model");
+                    SaveModel(agent, $"ppo_model_episode.model");
                     Console.WriteLine($"Model saved at episode {episode + 1}");
                 }
 
@@ -593,7 +595,29 @@ namespace PPOReinforcementLearning
                 await Task.Delay(1);
             }
         }
+        private void SaveModel(PPOAgent agent, string filePath, int episode = 1)
+        {
+            PPOHelper helper = new PPOHelper();
+            var model = new
+            {
+                IN_EPISODE = episode,
+
+                IN_ACTOR_WEIGHTS = helper.ConvertToJaggedList(agent.actorNetwork.GetWeights()),  // For weights
+                IN_ACTOR_BIASES = helper.ConvertVectorsToJaggedList(agent.actorNetwork.GetBiases()), // For biases
+
+                IN_CRITIC_WEIGHTS = helper.ConvertToJaggedList(agent.criticNetwork.GetWeights()),
+                IN_CRITIC_BIASES = helper.ConvertVectorsToJaggedList(agent.criticNetwork.GetBiases())
+
+            };
+
+            string json = JsonSerializer.Serialize(model, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(filePath, json);
+        }
     }
+
+
+
+
 
     /// <summary>
     /// Interface for environment

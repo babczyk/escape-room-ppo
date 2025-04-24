@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
+using MathNet.Numerics.LinearAlgebra;
 using Microsoft.Xna.Framework;
 
 
@@ -262,6 +263,41 @@ class PPOHelper
         return velocity;
     }
 
+    public List<float[][]> ConvertToJaggedList(List<Matrix<float>> matrices)
+    {
+        var jaggedList = new List<float[][]>();
+
+        foreach (var matrix in matrices)
+        {
+            var rows = matrix.RowCount;
+            var cols = matrix.ColumnCount;
+            var jagged = new float[rows][];
+
+            for (int i = 0; i < rows; i++)
+            {
+                jagged[i] = new float[cols];
+                for (int j = 0; j < cols; j++)
+                {
+                    jagged[i][j] = matrix[i, j];
+                }
+            }
+
+            jaggedList.Add(jagged);
+        }
+
+        return jaggedList;
+    }
+    public List<float[]> ConvertVectorsToJaggedList(List<Vector<float>> vectors)
+    {
+        var result = new List<float[]>();
+
+        foreach (var vector in vectors)
+        {
+            result.Add(vector.ToArray());
+        }
+
+        return result;
+    }
     public double[] InitializeVelocity(double[] biases)
     {
         Random rand = new Random();
