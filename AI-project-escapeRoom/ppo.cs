@@ -523,8 +523,7 @@ namespace PPOReinforcementLearning
             this.maxEpisodes = maxEpisodes;
             this.stepsPerEpisode = stepsPerEpisode;
             this.trainInterval = trainInterval;
-            this.gameEnv = new GameEnvironment(game);
-
+            gameEnv = new GameEnvironment(game);
             agent = new PPOAgent(stateSize, actionSize);
         }
 
@@ -548,6 +547,7 @@ namespace PPOReinforcementLearning
                     float value = agent.GetValue(state);
 
                     // Take action in environment
+                    Console.WriteLine($"Action: {action}");
                     var (nextState, reward, done) = gameEnv.Step(action);
 
                     // Store experience
@@ -655,10 +655,16 @@ namespace PPOReinforcementLearning
     /// <summary>
     /// Main program class
     /// </summary>
-    public class Program
+    public class Program2
     {
-        public static async Task Main(string[] args)
+        public static async Task Main(Game1 game)
         {
+
+            if (game == null)
+            {
+                throw new ArgumentNullException(nameof(game), "Game1 instance is null!");
+            }
+
             // Configuration
             int stateSize = 8;    // Adjust to match your environment
             int actionSize = 4;   // Adjust to match your environment
@@ -666,11 +672,9 @@ namespace PPOReinforcementLearning
             int stepsPerEpisode = 2000; // As per your requirement
 
             // Create environment (replace with your environment)
-            GameEnvironment environment = new GameEnvironment(stateSize, actionSize);
-
             // Create and run PPO trainer
-            PPOTrainer trainer = new PPOTrainer(
-                environment,
+            PPOTrainer trainer = new(
+                game,
                 stateSize,
                 actionSize,
                 maxEpisodes,

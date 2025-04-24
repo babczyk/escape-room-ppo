@@ -37,26 +37,18 @@ class GameEnvironment
 
     public Vector<float> GetState()
     {
-        // Create a list for our state values
         var stateValues = new List<float>
     {
         (float)(game.player.Position.X / game.widthLevel),
         (float)(game.player.Position.Y / game.groundLevel),
         (float)(game.box.Position.X / game.widthLevel),
         (float)(game.box.Position.Y / game.groundLevel),
-        (float)(game.button.Position.X / game.widthLevel),
-        (float)(game.button.Position.Y / game.groundLevel),
-        (float)(game.door.Position.X / game.widthLevel),
-        (float)(game.door.Position.Y / game.groundLevel),
         game.player.heldBox != null ? 1.0f : 0.0f,
         game.IsPressed ? 1.0f : 0.0f,
         game.IsOpen ? 1.0f : 0.0f,
-        (float)game.player.Velocity.Length(),
-        (float)Vector2.Distance(game.player.Position, game.box.Position),
-        (float)Vector2.Distance(game.box.Position, game.button.Position)
+        (float)game.player.Velocity.Length()
     };
 
-        // Convert to Vector<float>
         return Vector<float>.Build.DenseOfArray(stateValues.ToArray());
     }
 
