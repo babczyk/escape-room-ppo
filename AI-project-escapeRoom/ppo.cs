@@ -585,9 +585,9 @@ namespace PPOReinforcementLearning
                 Console.WriteLine($"Episode {episode + 1}/{maxEpisodes}, Reward: {episodeReward}");
 
                 // Optionally save the model periodically
-                if ((episode + 1) % 100 == 0)
+                if ((episode + 1) % 1 == 0)
                 {
-                    SaveModel(agent, $"ppo_model_episode.model");
+                    SaveModel(agent, $"ppo_model_episode.json", episode + 1);
                     Console.WriteLine($"Model saved at episode {episode + 1}");
                 }
 
@@ -611,7 +611,10 @@ namespace PPOReinforcementLearning
             };
 
             string json = JsonSerializer.Serialize(model, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(filePath, json);
+            string parentDirectory = Directory.GetParent(Directory.GetParent(Directory.
+            GetParent(Directory.GetCurrentDirectory()).FullName).FullName).FullName;
+            string fullPath = Path.Combine(parentDirectory, filePath);
+            File.WriteAllText("statistic_R_files/" + fullPath, json);
         }
     }
 

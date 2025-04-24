@@ -1,8 +1,14 @@
 library(jsonlite)
 
 print_model_summary <- function(file_path) {
-  # Load the model file
-  model <- fromJSON(file_path)
+  if (!file.exists(file_path)) {
+    stop("File not found: ", file_path)
+  }
+
+  # Read JSON from file
+  json_text <- readLines(file_path, warn = FALSE)
+  json_combined <- paste(json_text, collapse = "\n")
+  model <- fromJSON(json_combined)
 
   cat("====== PPO MODEL SUMMARY ======\n\n")
 
@@ -44,4 +50,3 @@ print_model_summary <- function(file_path) {
 
   cat("\n==== END OF SUMMARY ====\n")
 }
-print_model_summary("ppo_model_episode_1.model")
