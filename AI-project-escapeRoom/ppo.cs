@@ -518,6 +518,7 @@ namespace PPOReinforcementLearning
         private int stepsPerEpisode;
         private int trainInterval;
         private GameEnvironment gameEnv;
+        private List<float> totalReward = new List<float>();
 
         public PPOTrainer(Game1 game, int stateSize, int actionSize, int maxEpisodes = 1000, int stepsPerEpisode = 2000, int trainInterval = 2000)
         {
@@ -573,6 +574,7 @@ namespace PPOReinforcementLearning
                     {
                         // Train agent
                         agent.Train(experiences);
+                        totalReward.Add(episodeReward);
                         experiences.Clear();
                     }
 
@@ -601,12 +603,13 @@ namespace PPOReinforcementLearning
             var model = new
             {
                 IN_EPISODE = episode,
-
+                TOTAL_Reward = totalReward,
                 IN_ACTOR_WEIGHTS = helper.ConvertToJaggedList(agent.actorNetwork.GetWeights()),  // For weights
                 IN_ACTOR_BIASES = helper.ConvertVectorsToJaggedList(agent.actorNetwork.GetBiases()), // For biases
 
                 IN_CRITIC_WEIGHTS = helper.ConvertToJaggedList(agent.criticNetwork.GetWeights()),
                 IN_CRITIC_BIASES = helper.ConvertVectorsToJaggedList(agent.criticNetwork.GetBiases())
+
 
             };
 

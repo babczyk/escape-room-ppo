@@ -18,7 +18,7 @@ class GameEnvironment
     private int currentStep;
     public List<int> PlayerMove;
 
-    public float pick_the_box = 1;
+    public float pick_the_box = 0.05f;
     public float place_the_box_good = 5;
     public float finish_reward = 10;
 
@@ -96,7 +96,7 @@ class GameEnvironment
         if (game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null
         || game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null)
         {
-            reward += 0.2f;
+            reward += 0f;
         }
 
         ///////////////////////////////
@@ -130,6 +130,7 @@ class GameEnvironment
         // Reset if out of bounds
         if (IsOutOfBounds(game.player) || IsOutOfBounds(game.box))
         {
+            game.player.DropHeldBox();
             ResetPlayerAndBox();
         }
         //panelty for geting away from the goals
@@ -142,7 +143,12 @@ class GameEnvironment
         // Maximum steps penalty
         if (currentStep >= maxSteps)
         {
+            if (!game.IsPressed && !IsOutOfBounds(game.player))
+            {
+                reward -= finish_reward; // Reward for escaping the room
+            }
             reward -= max_steps_panalty; // Small penalty for exceeding maximum steps
+            game.player.DropHeldBox();
             ResetPlayerAndBox();
             IsDone = true;
             currentStep = 0;
