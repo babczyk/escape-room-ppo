@@ -613,8 +613,8 @@ namespace PPOReinforcementLearning
             string json = JsonSerializer.Serialize(model, new JsonSerializerOptions { WriteIndented = true });
             string parentDirectory = Directory.GetParent(Directory.GetParent(Directory.
             GetParent(Directory.GetCurrentDirectory()).FullName).FullName).FullName;
-            string fullPath = Path.Combine(parentDirectory, filePath);
-            File.WriteAllText("statistic_R_files/" + fullPath, json);
+            string fullPath = Path.Combine(parentDirectory + "\\statistics_R_files", filePath);
+            File.WriteAllText(fullPath, json);
         }
     }
 
