@@ -1,42 +1,26 @@
+# Load necessary libraries
 library(jsonlite)
 library(ggplot2)
-library(gridExtra)
+library(dplyr)
 
-# Function to flatten matrices and vectors to a single vector for each episode
-flatten_weights_and_biases <- function(weights_list, biases_list) {
-  # Flatten weights and biases into a list of vectors
-  weights_flat <- lapply(weights_list, function(w) as.vector(w))
-  biases_flat <- lapply(biases_list, function(b) as.vector(b))
-  return(list(weights = weights_flat, biases = biases_flat))
-}
+# Load the JSON file
+ppo_data <- fromJSON("PG_MAIN\\AI-project-escapeRoom\\statistics_R_files\\ppo_model_episode.json")
 
-# Function to print model summary from the JSON file
-print_model_summary <- function(file_path) {
-  if (!file.exists(file_path)) {
-    stop("File not found: ", file_path)
-  }
+# Create data frame with episode numbers and rewards
+ppo_df <- data.frame(
+  episode = 1:ppo_data$IN_EPISODE,
+  total_reward = ppo_data$TOTAL_Reward
+)
 
-  # Read JSON from file
-  json_text <- readLines(file_path, warn = FALSE)
-  json_combined <- paste(json_text, collapse = "\n")
-  model <- fromJSON(json_combined)
-}
+# Plot total reward over episodes
+reward_plot <- ggplot(ppo_df, aes(x = episode, y = total_reward)) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_smooth(method = "loess", color = "red", se = FALSE, linetype = "dashed") +
+  labs(
+    title = "PPO Learning Progress: Total Reward Over Episodes",
+    x = "Episode",
+    y = "Total Reward"
+  ) +
+  theme_minimal(base_size = 14)
 
-
-
-# Example data: Let's assume your rewards are stored in a vector and times in another
-times <- 1:100 # Example time points
-rewards <- rnorm(100, mean = 50, sd = 10) # Example rewards, normally distributed
-
-# Create a data frame
-data <- data.frame(Time = times, Rewards = rewards)
-
-# Plotting the rewards over time
-ggplot(data, aes(x = Time, y = Rewards)) +
-  geom_line(color = "blue") +
-  geom_point(color = "red") +
-  labs(title = "Rewards Over Time", x = "Time", y = "Rewards") +
-  theme_minimal()
-# Example usage
-print_model_summary("ppo_model_episode.json") # Print model summary
-plot_learning_progress("ppo_model_episode.json") # Plot learning progress
+print(reward_plot)
