@@ -220,6 +220,7 @@ namespace PPOReinforcementLearning
         private int stateSize;
         private int actionSize;
         private float gamma = 0.99f;
+        private float gaeLambda = 0.95f;
         private float clipEpsilon = 0.2f;
         private float valueCoeff = 0.7f;
         private float entropyCoeff = 0.015f;
@@ -315,16 +316,19 @@ namespace PPOReinforcementLearning
 
         private void ComputeReturnsAndAdvantages(List<Experience> experiences, List<float> returns, List<float> advantages)
         {
-            float nextValue = 0;
+            float gae = 0f;
+            float nextValue = 0f;
 
             for (int i = experiences.Count - 1; i >= 0; i--)
             {
                 Experience exp = experiences[i];
-                float nextReturn = exp.Done ? 0 : nextValue;
-                float currentReturn = exp.Reward + gamma * nextReturn;
+                float delta = exp.Reward + (exp.Done ? 0f : gamma * nextValue) - exp.Value;
 
-                returns.Insert(0, currentReturn);
-                advantages.Insert(0, currentReturn - exp.Value);
+                gae = delta + gamma * gaeLambda * (exp.Done ? 0f : gae);
+                advantages.Insert(0, gae);
+
+                float returnValue = gae + exp.Value;
+                returns.Insert(0, returnValue);
 
                 nextValue = exp.Value;
             }

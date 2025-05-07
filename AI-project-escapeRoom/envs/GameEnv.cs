@@ -104,7 +104,9 @@ class GameEnvironment
         }
 
         //culiding with the walls (not the ground)
-        if (game.player.Intersects(game.wall))
+        if (game.player.Intersects(game.walls[2])
+        || game.player.Intersects(game.walls[3])
+        || game.player.Intersects(game.walls[4]))
         {
             reward -= culide_with_wall; // Penalty for colliding with the walls
         }
