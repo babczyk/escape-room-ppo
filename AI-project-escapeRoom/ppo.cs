@@ -221,8 +221,8 @@ namespace PPOReinforcementLearning
         private int actionSize;
         private float gamma = 0.99f;
         private float clipEpsilon = 0.2f;
-        private float valueCoeff = 0.5f;
-        private float entropyCoeff = 0.01f;
+        private float valueCoeff = 0.7f;
+        private float entropyCoeff = 0.015f;
         private int batchSize = 64;
         private int epochs = 10;
         private Random random = new Random();
@@ -282,8 +282,9 @@ namespace PPOReinforcementLearning
 
         private Vector<float> Softmax(Vector<float> logits)
         {
+            float maxLogit = logits.Max();
             Vector<float> expValues = Vector<float>.Build.DenseOfEnumerable(
-                logits.Select(x => (float)Math.Exp(x - logits.Max()))
+                logits.Select(x => (float)Math.Exp(x - maxLogit))
             );
 
             float sumExpValues = expValues.Sum();
@@ -332,10 +333,12 @@ namespace PPOReinforcementLearning
             float meanAdvantage = advantages.Average();
             float stdAdvantage = (float)Math.Sqrt(advantages.Select(a => Math.Pow(a - meanAdvantage, 2)).Average());
 
+            float clipLimit = 5.0f;
             for (int i = 0; i < advantages.Count; i++)
             {
-                advantages[i] = (advantages[i] - meanAdvantage) / (stdAdvantage + 1e-8f);
+                advantages[i] = Math.Clamp(advantages[i], -clipLimit, clipLimit);
             }
+            Console.WriteLine($"Advantage mean: {meanAdvantage}, std: {stdAdvantage}, min: {advantages.Min()}, max: {advantages.Max()}");
         }
 
         private void UpdateNetworks(List<Experience> experiences, List<float> returns, List<float> advantages, List<int> batchIndices)
@@ -358,7 +361,11 @@ namespace PPOReinforcementLearning
 
                 // Compute policy loss
                 Vector<float> logits = actorNetwork.Forward(exp.State);
+                logits = logits / logits.AbsoluteMaximum();
+
+                float mean = logits.Average();
                 Vector<float> probs = Softmax(logits);
+
                 float newLogProb = (float)Math.Log(probs[exp.Action] + 1e-10);
 
                 float ratio = (float)Math.Exp(newLogProb - exp.LogProbability);
@@ -697,7 +704,7 @@ namespace PPOReinforcementLearning
 
             // Configuration
             int stateSize = 8;    // Adjust to match your environment
-            int actionSize = 4;   // Adjust to match your environment
+            int actionSize = 5;
             int maxEpisodes = 500;
             int stepsPerEpisode = 2000; // As per your requirement
 

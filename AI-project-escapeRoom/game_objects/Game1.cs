@@ -247,9 +247,8 @@ namespace AI_project_escapeRoom
             }
             if (state.IsKeyDown(Keys.Left))
             {
-                if (selectedReward == 0)
-                    gameEnvironment.pick_the_box += 0.5f;
-                else if (selectedReward == 1)
+
+                if (selectedReward == 1)
                     gameEnvironment.place_the_box_good += 0.5f;
                 else if (selectedReward == 2)
                     gameEnvironment.finish_reward += 0.5f;
@@ -268,9 +267,7 @@ namespace AI_project_escapeRoom
             }
             if (state.IsKeyDown(Keys.Right))
             {
-                if (selectedReward == 0)
-                    gameEnvironment.pick_the_box -= 0.5f;
-                else if (selectedReward == 1)
+                if (selectedReward == 1)
                     gameEnvironment.place_the_box_good -= 0.5f;
                 else if (selectedReward == 2)
                     gameEnvironment.finish_reward -= 0.5f;

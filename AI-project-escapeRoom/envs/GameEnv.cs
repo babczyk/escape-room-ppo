@@ -18,7 +18,6 @@ class GameEnvironment
     private int currentStep;
     public List<int> PlayerMove;
 
-    public float pick_the_box = 0.05f;
     public float place_the_box_good = 5;
     public float finish_reward = 10;
 
@@ -73,11 +72,6 @@ class GameEnvironment
         // Rewards for key objectives//
         ///////////////////////////////
 
-        //pick the box
-        if (game.player.heldBox != null)
-        {
-            reward += pick_the_box; // Reward for picking up the box
-        }
 
         //placing the box on the button
         if (game.box.Intersects(game.button) && game.player.heldBox == null)
@@ -96,21 +90,21 @@ class GameEnvironment
         if (game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null
         || game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null)
         {
-            reward += 0f;
+            reward += 0.2f;
         }
 
         ///////////////////////////////
         // Penalties for incorrect behaviors//
         ///////////////////////////////
         //droping the box for no resone
-        if (game.player.heldBox == null && game.previousBoxState == true
+        if (game.player.heldBox == null
         && !game.box.Intersects(game.button))
         {
             reward -= droping_box_bad; // Penalty for dropping the box for no reason
         }
 
         //culiding with the walls (not the ground)
-        if (!game.player.IsGrounded && game.player.Intersects(game.wall))
+        if (game.player.Intersects(game.wall))
         {
             reward -= culide_with_wall; // Penalty for colliding with the walls
         }
@@ -128,7 +122,7 @@ class GameEnvironment
         }
 
         // Reset if out of bounds
-        if (IsOutOfBounds(game.player) || IsOutOfBounds(game.box))
+        if ((IsOutOfBounds(game.player) || IsOutOfBounds(game.box)) && !game.IsPressed)
         {
             game.player.DropHeldBox();
             ResetPlayerAndBox();
