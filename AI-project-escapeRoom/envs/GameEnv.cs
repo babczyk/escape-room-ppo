@@ -22,10 +22,10 @@ class GameEnvironment
     public float finish_reward = 10;
 
     public float droping_box_bad = -2;
-    public float culide_with_wall = -1;
-    public float repeating_actions = -1;
-    public float time_panalty = -0.5f;
-    public float max_steps_panalty = -5;
+    public float culide_with_wall = -2;
+    public float repeating_actions = -2;
+    public float time_panalty = -1f;
+    public float max_steps_panalty = -7;
 
     public GameEnvironment(Game1 game)
     {
@@ -45,7 +45,6 @@ class GameEnvironment
         game.player.heldBox != null ? 1.0f : 0.0f,
         game.IsPressed ? 1.0f : 0.0f,
         game.IsOpen ? 1.0f : 0.0f,
-        (float)game.player.Velocity.Length()
     };
 
         return Vector<float>.Build.DenseOfArray(stateValues.ToArray());
@@ -63,87 +62,95 @@ class GameEnvironment
             case 0: game.player.Move(new Vector2(-10, 0)); break; // Move left
             case 1: game.player.Move(new Vector2(10, 0)); break;  // Move right
             case 2: if (game.player.IsGrounded) game.player.ApplyForce(new Vector2(0, -250)); game.player.IsGrounded = false; break; // Jump
-            case 3: game.player.Grab(game.box); break; // Interact (e.g., pick up the box)
-            case 4: game.player.DropHeldBox(); break; // Interact (e.g., drop the box)
+            case 3: game.player.Grab(game.box); break; // Grab box
+            case 4: game.player.DropHeldBox(); break; // Drop box
         }
 
         PlayerMove.Add(action);
+
         ///////////////////////////////
-        // Rewards for key objectives//
+        // Rewards
         ///////////////////////////////
 
-
-        //placing the box on the button
+        // +1 for placing box correctly
         if (game.box.Intersects(game.button) && game.player.heldBox == null)
         {
-            reward += place_the_box_good; // Reward for placing the box on the button
+            reward += 2f;
+            Console.WriteLine("[REWARD] Placed box on button: +2");
         }
 
-        //exiting the room finish goal
+        // +3 for successfully exiting the room
         if (game.IsPressed && IsOutOfBounds(game.player))
         {
-            reward += finish_reward; // Reward for escaping the room
+            reward += 3f;
+            Console.WriteLine("[REWARD] Escaped the room: +3");
             IsDone = true;
         }
 
-        //reward for geting closer to the goals
-        if (game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null
-        || game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null)
+        // +0.1 for moving toward goal
+        if ((game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null)
+         || (game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null))
         {
             reward += 0.2f;
+            Console.WriteLine("[REWARD] Moving toward goal: +0.2");
+        }
+
+        // +0.5 for pressing the button
+        if (game.IsPressed)
+        {
+            reward += 0.5f;
+            Console.WriteLine("[REWARD] Dropped box on button: +0.5");
+        }
+
+        // +0.5 for picking up box
+        if (game.player.heldBox != null && action == 3)
+        {
+            reward += 0.5f;
+            Console.WriteLine("[REWARD] Picked up box: +0.5");
         }
 
         ///////////////////////////////
-        // Penalties for incorrect behaviors//
+        // Penalties
         ///////////////////////////////
-        //droping the box for no resone
-        if (game.player.heldBox == null
-        && !game.box.Intersects(game.button))
+
+        // -1 for dropping box not on button
+        if (game.player.heldBox == null && !game.box.Intersects(game.button) && action == 4)
         {
-            reward -= droping_box_bad; // Penalty for dropping the box for no reason
+            reward -= 0.5f;
+            Console.WriteLine("[PENALTY] Dropped box off button: -0.5");
         }
 
-        //culiding with the walls (not the ground)
-        if (game.player.Intersects(game.walls[2])
-        || game.player.Intersects(game.walls[3])
-        || game.player.Intersects(game.walls[4]))
+        // -0.5 for colliding with walls
+        if (game.player.Intersects(game.walls[2]) || game.player.Intersects(game.walls[3]) || game.player.Intersects(game.walls[4]))
         {
-            reward -= culide_with_wall; // Penalty for colliding with the walls
+            reward -= 0.25f;
+            Console.WriteLine("[PENALTY] Collided with wall: -0.25");
         }
 
-        //repeating actions
-        if (PlayerMove.Skip(PlayerMove.Count - 50).Distinct().Count() < 3)
-        {
-            reward -= repeating_actions;
-        }
+        // -0.5 for repeating same action too much
 
-        //time penalty
+
+        // -0.1 time penalty every 100 steps
         if (currentStep % 100 == 0)
         {
-            reward -= time_panalty; // Penalty for taking too long
+            reward -= 0.1f;
+            Console.WriteLine("[PENALTY] Time penalty: -0.1");
         }
 
-        // Reset if out of bounds
-        if ((IsOutOfBounds(game.player) || IsOutOfBounds(game.box)) && !game.IsPressed)
-        {
-            game.player.DropHeldBox();
-            ResetPlayerAndBox();
-        }
-        //panelty for geting away from the goals
-        if (!game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null
-        || !game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null)
+        // -0.1 for moving away from goal
+        if ((!game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null)
+         || (!game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null))
         {
             reward -= 0.1f;
+            Console.WriteLine("[PENALTY] Moving away from goal: -0.1");
         }
 
-        // Maximum steps penalty
+
+        // -3 if max steps exceeded (failure)
         if (currentStep >= maxSteps)
         {
-            if (!game.IsPressed && !IsOutOfBounds(game.player))
-            {
-                reward -= finish_reward; // Reward for escaping the room
-            }
-            reward -= max_steps_panalty; // Small penalty for exceeding maximum steps
+            reward -= 1f;
+            Console.WriteLine("[PENALTY] Exceeded max steps: -1");
             game.player.DropHeldBox();
             ResetPlayerAndBox();
             IsDone = true;
@@ -151,6 +158,8 @@ class GameEnvironment
         }
 
         Thread.Sleep(1);
+        Console.WriteLine($"[TOTAL REWARD THIS STEP]: {reward}");
+
         return (GetState(), reward, IsDone);
     }
 

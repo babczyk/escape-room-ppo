@@ -221,9 +221,9 @@ namespace PPOReinforcementLearning
         private int actionSize;
         private float gamma = 0.99f;
         private float gaeLambda = 0.95f;
-        private float clipEpsilon = 0.2f;
+        private float clipEpsilon = 0.15f;
         private float valueCoeff = 0.7f;
-        private float entropyCoeff = 0.015f;
+        private float entropyCoeff = 0.5f;
         private int batchSize = 64;
         private int epochs = 10;
         private Random random = new Random();
@@ -249,9 +249,11 @@ namespace PPOReinforcementLearning
 
         public int ChooseAction(Vector<float> state)
         {
+            Console.WriteLine($"State: {string.Join(", ", state)}");
             Vector<float> logits = actorNetwork.Forward(state);
+            Console.WriteLine($"Logits: {string.Join(", ", logits)}");
             Vector<float> probs = Softmax(logits);
-
+            Console.WriteLine($"Probabilities: {string.Join(", ", probs)}");
             // Sample action from probability distribution
             float sample = (float)random.NextDouble();
             float cumulativeProbability = 0;
@@ -322,9 +324,10 @@ namespace PPOReinforcementLearning
             for (int i = experiences.Count - 1; i >= 0; i--)
             {
                 Experience exp = experiences[i];
-                float delta = exp.Reward + (exp.Done ? 0f : gamma * nextValue) - exp.Value;
-
-                gae = delta + gamma * gaeLambda * (exp.Done ? 0f : gae);
+                float gammaH = exp.Done ? 0f : gamma;
+                float delta = exp.Reward + (gammaH * nextValue) - exp.Value;
+                float gaeH = exp.Done ? 0f : gae;
+                gae = delta + gamma * gaeLambda * gaeH;
                 advantages.Insert(0, gae);
 
                 float returnValue = gae + exp.Value;
@@ -335,22 +338,16 @@ namespace PPOReinforcementLearning
 
             // Normalize advantages
             float meanAdvantage = advantages.Average();
-            float stdAdvantage = (float)Math.Sqrt(advantages.Select(a => Math.Pow(a - meanAdvantage, 2)).Average());
-
-            float clipLimit = 5.0f;
+            float stdAdvantage = (float)Math.Sqrt(advantages.Select(a => Math.Pow(a - meanAdvantage, 2)).Average() + 1e-8f);
             for (int i = 0; i < advantages.Count; i++)
-            {
-                advantages[i] = Math.Clamp(advantages[i], -clipLimit, clipLimit);
-            }
-            Console.WriteLine($"Advantage mean: {meanAdvantage}, std: {stdAdvantage}, min: {advantages.Min()}, max: {advantages.Max()}");
+                advantages[i] = (advantages[i] - meanAdvantage) / (stdAdvantage + (float)1e-8);
         }
 
         private void UpdateNetworks(List<Experience> experiences, List<float> returns, List<float> advantages, List<int> batchIndices)
         {
-            // Calculate gradients for actor and critic networks
+            // Initialize gradient accumulators
             List<Matrix<float>> actorGradWeights = InitializeGradients(actorNetwork.GetWeights());
             List<Vector<float>> actorGradBiases = InitializeGradients(actorNetwork.GetBiases());
-
             List<Matrix<float>> criticGradWeights = InitializeGradients(criticNetwork.GetWeights());
             List<Vector<float>> criticGradBiases = InitializeGradients(criticNetwork.GetBiases());
 
@@ -363,146 +360,245 @@ namespace PPOReinforcementLearning
                 float advantage = advantages[idx];
                 float target = returns[idx];
 
-                // Compute policy loss
+                // === Actor (policy) loss ===
                 Vector<float> logits = actorNetwork.Forward(exp.State);
-                logits = logits / logits.AbsoluteMaximum();
-
-                float mean = logits.Average();
                 Vector<float> probs = Softmax(logits);
 
-                float newLogProb = (float)Math.Log(probs[exp.Action] + 1e-10);
-
+                float newLogProb = (float)Math.Log(probs[exp.Action] + 1e-10f);
                 float ratio = (float)Math.Exp(newLogProb - exp.LogProbability);
                 float surrogate1 = ratio * advantage;
                 float surrogate2 = Math.Clamp(ratio, 1 - clipEpsilon, 1 + clipEpsilon) * advantage;
-
                 float policyLoss = -Math.Min(surrogate1, surrogate2);
 
-                // Compute entropy bonus
-                float entropy = -probs.Sum(p => p * (float)Math.Log(p + 1e-10));
+                // Entropy bonus
+                float entropy = -probs.Sum(p => p * (float)Math.Log(p + 1e-10f));
 
-                // Compute value loss
+                // === Critic (value) loss ===
                 float value = criticNetwork.Forward(exp.State)[0];
-                float valueLoss = (float)Math.Pow(value - target, 2);
+                float v_pred_clipped = exp.Value + Math.Clamp(value - exp.Value, -clipEpsilon, clipEpsilon);
+                float v_loss1 = MathF.Pow(value - target, 2);
+                float v_loss2 = MathF.Pow(v_pred_clipped - target, 2);
+                float valueLoss = valueCoeff * Math.Max(v_loss1, v_loss2);
 
-                // Accumulate loss
+                // === Accumulate total losses (for logging only) ===
                 actorLoss += policyLoss - entropyCoeff * entropy;
-                criticLoss += valueCoeff * valueLoss;
+                criticLoss += valueLoss;
 
-                // Calculate gradients (simplified for this implementation)
-                // In a real implementation, you would use automatic differentiation
-                // This is a placeholder for backpropagation
-                CalculateGradients(exp, advantage, target, actorGradWeights, actorGradBiases, criticGradWeights, criticGradBiases);
+                // === Calculate gradients and backprop ===
+                CalculateGradients(
+                    exp,
+                    advantage,
+                    target,
+                    actorGradWeights,
+                    actorGradBiases,
+                    criticGradWeights,
+                    criticGradBiases
+                );
             }
 
-            // Normalize gradients
-            float batchSize = batchIndices.Count;
-            NormalizeGradients(actorGradWeights, actorGradBiases, batchSize);
-            NormalizeGradients(criticGradWeights, criticGradBiases, batchSize);
+            // === Normalize gradients by batch size ===
+            NormalizeGradients(actorGradWeights, actorGradBiases, batchIndices.Count);
+            NormalizeGradients(criticGradWeights, criticGradBiases, batchIndices.Count);
 
-            // Update networks
+            // === Optional: Clip gradients by global norm ===
+            float maxGradNorm = 0.5f;  // or tune this value
+            ClipGradients(actorGradWeights, actorGradBiases, maxGradNorm);
+            ClipGradients(criticGradWeights, criticGradBiases, maxGradNorm);
+
+            // === Apply optimizer updates ===
             actorOptimizer.Update(actorNetwork.GetWeights(), actorNetwork.GetBiases(), actorGradWeights, actorGradBiases);
             criticOptimizer.Update(criticNetwork.GetWeights(), criticNetwork.GetBiases(), criticGradWeights, criticGradBiases);
+
+            // === Logging (optional) ===
+            Console.WriteLine($"[PPO] Actor Loss: {actorLoss / batchIndices.Count}, Critic Loss: {criticLoss / batchIndices.Count}");
+
+
         }
 
         private List<Matrix<float>> InitializeGradients(List<Matrix<float>> weights)
         {
-            List<Matrix<float>> gradients = new List<Matrix<float>>();
-
-            foreach (var weight in weights)
-            {
-                gradients.Add(Matrix<float>.Build.Dense(weight.RowCount, weight.ColumnCount));
-            }
-
-            return gradients;
+            return weights.Select(w => Matrix<float>.Build.Dense(w.RowCount, w.ColumnCount, 0f)).ToList();
         }
 
         private List<Vector<float>> InitializeGradients(List<Vector<float>> biases)
         {
-            List<Vector<float>> gradients = new List<Vector<float>>();
+            return biases.Select(b => Vector<float>.Build.Dense(b.Count, 0f)).ToList();
+        }
 
-            foreach (var bias in biases)
+        private void NormalizeGradients(List<Matrix<float>> gradWeights, List<Vector<float>> gradBiases, float batchSize)
+        {
+            for (int i = 0; i < gradWeights.Count; i++)
             {
-                gradients.Add(Vector<float>.Build.Dense(bias.Count));
+                gradWeights[i] /= batchSize;
+                gradBiases[i] /= batchSize;
             }
+        }
 
-            return gradients;
+        private void ClipGradients(List<Matrix<float>> gradWeights, List<Vector<float>> gradBiases, float maxNorm)
+        {
+            float totalNorm = 0f;
+
+            foreach (var gw in gradWeights)
+                totalNorm += gw.PointwisePower(2).Enumerate().Sum();
+
+            foreach (var gb in gradBiases)
+                totalNorm += gb.PointwisePower(2).Sum();
+
+            totalNorm = MathF.Sqrt(totalNorm);
+
+            if (totalNorm > maxNorm)
+            {
+                float scale = maxNorm / (totalNorm + 1e-6f);  // avoid div zero
+
+                for (int i = 0; i < gradWeights.Count; i++)
+                    gradWeights[i].MapInplace(x => x * scale);
+
+                for (int i = 0; i < gradBiases.Count; i++)
+                    gradBiases[i].MapInplace(x => x * scale);
+            }
         }
 
         private void CalculateGradients(
-            Experience exp,
-            float advantage,
-            float target,
-            List<Matrix<float>> actorGradWeights,
-            List<Vector<float>> actorGradBiases,
-            List<Matrix<float>> criticGradWeights,
-            List<Vector<float>> criticGradBiases)
+    Experience exp,
+    float advantage,
+    float target,
+    List<Matrix<float>> actorGradWeights,
+    List<Vector<float>> actorGradBiases,
+    List<Matrix<float>> criticGradWeights,
+    List<Vector<float>> criticGradBiases)
         {
-            // In a real implementation, you would compute proper gradients through backpropagation
-            // This is a simplified placeholder that simulates gradient computation
-            // For a real implementation, consider using a library with automatic differentiation
+            // === ACTOR GRADIENTS ===
 
-            // Simplified update for demonstration purposes
-            // In practice, you would compute proper gradients based on the loss function
+            // Forward pass to get logits
             Vector<float> actorOutput = actorNetwork.Forward(exp.State);
+
+            // Convert logits to probabilities (softmax)
             Vector<float> probs = Softmax(actorOutput);
-            Vector<float> actorGrad = Vector<float>.Build.Dense(probs.Count);
-            actorGrad[exp.Action] = advantage;
 
+            // Calculate gradient of log π(a|s)
+            Vector<float> gradLogPi = Vector<float>.Build.Dense(probs.Count, i => (i == exp.Action ? 1f : 0f) - probs[i]);
+
+            // Weight by advantage (PPO surrogate signal)
+            Vector<float> actorGrad = gradLogPi * advantage;
+
+            // Add entropy gradient to encourage exploration
+            Vector<float> entropyGrad = probs.Map(p => -MathF.Log(p + 1e-10f) - 1f) * entropyCoeff;
+
+            // Combine policy + entropy gradients
+            actorGrad += entropyGrad;
+
+            // Backpropagate actor gradients
+            BackpropagateGradients(actorNetwork, exp.State, actorGrad, actorGradWeights, actorGradBiases);
+
+            // === CRITIC GRADIENTS ===
+
+            // Forward pass to get value estimate
             Vector<float> criticOutput = criticNetwork.Forward(exp.State);
-            float valueDiff = criticOutput[0] - target;
-            Vector<float> criticGrad = Vector<float>.Build.Dense(1);
-            criticGrad[0] = valueCoeff * valueDiff;
+            float valueEstimate = criticOutput[0];
 
-            // Apply gradients (simplified)
-            ApplySimplifiedGradients(exp.State, actorGrad, actorGradWeights, actorGradBiases);
-            ApplySimplifiedGradients(exp.State, criticGrad, criticGradWeights, criticGradBiases);
+            // Compute critic gradient: ∇ (V(s) - target)^2 = 2 * (V(s) - target)
+            float valueError = valueEstimate - target;
+            Vector<float> criticGrad = Vector<float>.Build.Dense(1, 2f * valueError * valueCoeff);
+
+            // Backpropagate critic gradients
+            BackpropagateGradients(criticNetwork, exp.State, criticGrad, criticGradWeights, criticGradBiases);
         }
 
-        private void ApplySimplifiedGradients(
-            Vector<float> input,
-            Vector<float> outputGrad,
-            List<Matrix<float>> gradWeights,
-            List<Vector<float>> gradBiases)
+        private void BackpropagateGradients(
+    NeuralNetwork network,
+    Vector<float> input,
+    Vector<float> outputGrad,  // ∂L/∂output, shape = last layer size
+    List<Matrix<float>> gradWeights,
+    List<Vector<float>> gradBiases)
         {
-            // Simplified gradient application for demonstration
-            // In practice, you would compute proper gradients through backpropagation
+            var weights = network.GetWeights();
+            var biases = network.GetBiases();
 
-            for (int layer = 0; layer < gradWeights.Count; layer++)
+            var activations = new List<Vector<float>> { input };
+            var zs = new List<Vector<float>>();
+
+            Vector<float> activation = input;
+
+            // === Forward pass: collect activations and pre-activations (zs) ===
+            for (int i = 0; i < weights.Count; i++)
             {
-                for (int i = 0; i < gradWeights[layer].RowCount; i++)
-                {
-                    for (int j = 0; j < gradWeights[layer].ColumnCount; j++)
-                    {
-                        gradWeights[layer][i, j] += outputGrad[i % outputGrad.Count] * input[j % input.Count] * 0.01f;
-                    }
+                var z = weights[i].Multiply(activation).Add(biases[i]);
+                zs.Add(z);
 
-                    gradBiases[layer][i] += outputGrad[i % outputGrad.Count] * 0.01f;
+                // Apply hidden activations (ReLU)
+                if (i < weights.Count - 1)
+                {
+                    activation = ApplyReLU(z);
+                }
+                else
+                {
+                    // Output layer: check for non-linear activations if used
+                    // Here we assume linear, but you can add tanh/sigmoid handling if needed
+                    activation = z;
+                }
+
+                activations.Add(activation);
+            }
+
+            // === Backward pass ===
+            Vector<float> delta = outputGrad;
+
+            for (int layer = weights.Count - 1; layer >= 0; layer--)
+            {
+                var aPrev = activations[layer];      // input to this layer
+                var zCurrent = zs[layer];            // pre-activation of this layer
+
+                if (layer < weights.Count - 1)
+                {
+                    // Hidden layers: apply ReLU derivative
+                    delta = delta.PointwiseMultiply(ApplyReLUDerivative(zCurrent));
+                }
+                else
+                {
+                    delta = delta.PointwiseMultiply(ApplyReLUDerivative(zCurrent));
+                }
+
+                // Accumulate gradients
+                gradWeights[layer] += delta.OuterProduct(aPrev);
+                gradBiases[layer] += delta;
+
+                if (layer > 0)
+                {
+                    // Backpropagate to previous layer
+                    delta = weights[layer].TransposeThisAndMultiply(delta);
                 }
             }
         }
 
-        private void NormalizeGradients(List<Matrix<float>> gradWeights, List<Vector<float>> gradBiases, float divisor)
+        private Vector<float> ApplyReLU(Vector<float> input)
         {
-            foreach (var grad in gradWeights)
-            {
-                for (int i = 0; i < grad.RowCount; i++)
-                {
-                    for (int j = 0; j < grad.ColumnCount; j++)
-                    {
-                        grad[i, j] /= divisor;
-                    }
-                }
-            }
-
-            foreach (var grad in gradBiases)
-            {
-                for (int i = 0; i < grad.Count; i++)
-                {
-                    grad[i] /= divisor;
-                }
-            }
+            return input.Map(x => Math.Max(0f, x));
         }
+
+        private Vector<float> ApplyReLUDerivative(Vector<float> input)
+        {
+            return input.Map(x => x > 0f ? 1f : 0f);
+        }
+
+        private Vector<float> ApplyTanhDerivative(Vector<float> input)
+        {
+            return input.Map(x =>
+            {
+                float t = MathF.Tanh(x);
+                return 1f - t * t;
+            });
+        }
+
+        private Vector<float> ApplySigmoidDerivative(Vector<float> input)
+        {
+            return input.Map(x =>
+            {
+                float s = 1f / (1f + MathF.Exp(-x));
+                return s * (1f - s);
+            });
+        }
+
+
 
         private void Shuffle<T>(List<T> list)
         {
@@ -598,10 +694,23 @@ namespace PPOReinforcementLearning
                 Console.WriteLine($"Episode {episode + 1}/{maxEpisodes}, Reward: {episodeReward}");
 
                 // Optionally save the model periodically
-                if ((episode + 1) % 1 == 0)
+                string jsonFilePath = "ppo_model_episode.json"; // Replace with your actual JSON file path
+                if (File.Exists(jsonFilePath))
                 {
-                    SaveModel(agent, $"ppo_model_episode.json", episode + 1);
-                    Console.WriteLine($"Model saved at episode {episode + 1}");
+                    string jsonContent = File.ReadAllText(jsonFilePath);
+                    var model = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonContent);
+
+                    if (totalReward.Last() > (model != null && model.TryGetValue("TOTAL_Reward", out var value) && value is JsonElement jsonElement && jsonElement.ValueKind == JsonValueKind.Array
+                        ? jsonElement.EnumerateArray().Select(x => x.GetSingle()).Max()
+                        : float.MinValue))
+                    {
+                        SaveModel(agent, $"ppo_model_episode.json", episode + 1);
+                        Console.WriteLine($"Model saved at episode {episode + 1}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("JSON file not found.");
                 }
 
                 // Allow UI thread to process
@@ -707,7 +816,7 @@ namespace PPOReinforcementLearning
             }
 
             // Configuration
-            int stateSize = 8;    // Adjust to match your environment
+            int stateSize = 7;    // Adjust to match your environment
             int actionSize = 5;
             int maxEpisodes = 500;
             int stepsPerEpisode = 2000; // As per your requirement
