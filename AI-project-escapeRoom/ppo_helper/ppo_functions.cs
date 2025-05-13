@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Threading;
+using MathNet.Numerics.LinearAlgebra;
 using Microsoft.Xna.Framework;
 
 
@@ -163,15 +163,20 @@ class PPOHelper
     /// <returns>Chosen action index</returns>
     public int SampleAction(double[] actionProbs, bool isTraining = true)
     {
-        // Apply temperature scaling if training
-        double temperature = isTraining ? 1.0 : 0.5; // Lower temperature during evaluation
+        double temperature = isTraining ? 1.0 : 0.5;
 
         if (temperature != 1.0)
         {
-            // Apply temperature scaling
             double[] scaledProbs = actionProbs.Select(p => Math.Pow(p, 1 / temperature)).ToArray();
             double sum = scaledProbs.Sum();
             actionProbs = scaledProbs.Select(p => p / sum).ToArray();
+        }
+
+        // Ensure normalization
+        double total = actionProbs.Sum();
+        if (Math.Abs(total - 1.0) > 1e-6)
+        {
+            actionProbs = actionProbs.Select(p => p / total).ToArray();
         }
 
         double sample = random.NextDouble();
@@ -183,7 +188,8 @@ class PPOHelper
             if (sample <= cumulative)
                 return i;
         }
-        return actionProbs.Length - 1; // Fallback
+
+        return actionProbs.Select((p, i) => (p, i)).OrderByDescending(x => x.p).First().i;
     }
 
     public double CalculateLayerGradient(double weight)
@@ -256,6 +262,41 @@ class PPOHelper
         return velocity;
     }
 
+    public List<float[][]> ConvertToJaggedList(List<Matrix<float>> matrices)
+    {
+        var jaggedList = new List<float[][]>();
+
+        foreach (var matrix in matrices)
+        {
+            var rows = matrix.RowCount;
+            var cols = matrix.ColumnCount;
+            var jagged = new float[rows][];
+
+            for (int i = 0; i < rows; i++)
+            {
+                jagged[i] = new float[cols];
+                for (int j = 0; j < cols; j++)
+                {
+                    jagged[i][j] = matrix[i, j];
+                }
+            }
+
+            jaggedList.Add(jagged);
+        }
+
+        return jaggedList;
+    }
+    public List<float[]> ConvertVectorsToJaggedList(List<Vector<float>> vectors)
+    {
+        var result = new List<float[]>();
+
+        foreach (var vector in vectors)
+        {
+            result.Add(vector.ToArray());
+        }
+
+        return result;
+    }
     public double[] InitializeVelocity(double[] biases)
     {
         Random rand = new Random();

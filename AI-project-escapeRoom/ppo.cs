@@ -1,995 +1,839 @@
-#nullable enable
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Threading;
-using Microsoft.Xna.Framework;
+using System.Threading.Tasks;
+using AI_project_escapeRoom;
+using MathNet.Numerics.LinearAlgebra;
 
-class PPO
+namespace PPOReinforcementLearning
 {
-    private static Random random = new Random();
-    public int curentEpisode = 0;
-    public double policyLossesfordispaly = 0;
-    public double Value_Loss = 0;
-    public double Entropy = 0;
-    public double totalRewardInEpisode = 0;
-
-    // Neural network architecture
-    private const int HIDDEN_LAYER_1_SIZE = 128;
-    private const int HIDDEN_LAYER_2_SIZE = 128;
-    private const int HIDDEN_LAYER_3_SIZE = 64;
-
-    // Network weights
-    private double[,] policyWeights1;
-    private double[,] policyWeights2;
-    private double[,] policyWeights3;
-    private double[,] policyWeightsOutput;
-    private double[,] valueWeights1;
-    private double[,] valueWeights2;
-    private double[,] valueWeights3;
-    private double[,] valueWeightsOutput;
-
-
-    // Bias weights
-    private double[] policyBias1;
-    private double[] policyBias2;
-    private double[] policyBias3;
-    private double[] policyOutputBias;
-
-    private double[] valueBias1;
-    private double[] valueBias2;
-    private double[] valueBias3;
-    private double[] valueOutputBias;
-
-    // Hyperparameters
-    private const double GAMMA = 0.99f;
-    private const double CLIP_EPSILON = 0.2f;
-    private const double LEARNING_RATE = 0.002f;
-    private const int EPOCHS = 8;
-    private double ENTROPY_COEF = 0.05f; // Made non-constant to allow decay
-    private const double VALUE_COEF = 0.3f;
-    private const int BATCH_SIZE = 64;
-
-    // Training metrics
-    public List<double> episodeRewards;
-    private List<double> policyLosses;
-    private List<double> valueLosses;
-    private List<double> entropyValues;
-
-    // BatchNorm running statistics
-    private double[][] batchNormGamma; // Scale parameters
-    private double[][] batchNormBeta;  // Shift parameters
-    private double[] runningMean;      // Running means for each layer
-    private double[] runningVar;       // Running variances for each layer
-    private const double MOMENTUM = 0.99;
-
-    // BatchNorm parameters for value network
-    private double[][] valueBatchNormGamma; // Scale parameters
-    private double[][] valueBatchNormBeta;  // Shift parameters
-    private double[] valueRunningMean;      // Running means for each layer
-    private double[] valueRunningVar;       // Running variances for each layer
-
-    // Declare velocity matrices (same size as weights)
-    private double[,] velocityPW1;
-    private double[,] velocityPW2;
-    private double[,] velocityPW3;
-    private double[,] velocityPWOutput;
-
-    private double[,] velocityVW1;
-    private double[,] velocityVW2;
-    private double[,] velocityVW3;
-    private double[,] velocityVWOutput;
-
-    private double[] velocityBPW1;
-    private double[] velocityBPW2;
-    private double[] velocityBPW3;
-    private double[] velocityBPWOutput;
-
-    private double[] velocityBVW1;
-    private double[] velocityBVW2;
-    private double[] velocityBVW3;
-    private double[] velocityBVWOutput;
-
-    private int stateSize;
-    private int actionSize;
-
-    private PPOHelper helper = new PPOHelper();
+    /// <summary>
+    /// Represents a single experience step for the agent
+    /// </summary>
+    public class Experience
+    {
+        public Vector<float> State { get; set; }
+        public int Action { get; set; }
+        public float Reward { get; set; }
+        public Vector<float> NextState { get; set; }
+        public bool Done { get; set; }
+        public float LogProbability { get; set; }
+        public float Value { get; set; }
+    }
 
     /// <summary>
-    /// Initializes a new instance of the PPO class, setting up neural networks.
+    /// Neural network for the actor and critic models
     /// </summary>
-    /// <param name="stateSize">Number of inputs in the state vector</param>
-    /// <param name="actionSize">Number of possible actions</param>
-    public PPO(int stateSize = 14, int actionSize = 5)
+    public class NeuralNetwork
     {
-        this.stateSize = stateSize;
-        this.actionSize = actionSize;
+        private List<Matrix<float>> weights = new List<Matrix<float>>();
+        private List<Vector<float>> biases = new List<Vector<float>>();
+        private List<int> layerSizes;
+        private Random random = new Random();
 
-        // Initialize policy network
-        policyWeights1 = helper.InitializeWeights(stateSize, HIDDEN_LAYER_1_SIZE);
-        policyWeights2 = helper.InitializeWeights(HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE);
-        policyWeights3 = helper.InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
-        policyWeightsOutput = helper.InitializeWeights(HIDDEN_LAYER_3_SIZE, actionSize);
-
-        // Initialize value network
-        valueWeights1 = helper.InitializeWeights(stateSize, HIDDEN_LAYER_1_SIZE);
-        valueWeights2 = helper.InitializeWeights(HIDDEN_LAYER_1_SIZE, HIDDEN_LAYER_2_SIZE);
-        valueWeights3 = helper.InitializeWeights(HIDDEN_LAYER_2_SIZE, HIDDEN_LAYER_3_SIZE);
-        valueWeightsOutput = helper.InitializeWeights(HIDDEN_LAYER_3_SIZE, 1);
-
-        // Bias initialization (small random values)
-        policyBias1 = new double[HIDDEN_LAYER_1_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
-        policyBias2 = new double[HIDDEN_LAYER_2_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
-        policyBias3 = new double[HIDDEN_LAYER_3_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
-        policyOutputBias = new double[actionSize].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
-
-        valueBias1 = new double[HIDDEN_LAYER_1_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
-        valueBias2 = new double[HIDDEN_LAYER_2_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
-        valueBias3 = new double[HIDDEN_LAYER_3_SIZE].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
-        valueOutputBias = new double[1].Select(_ => (random.NextDouble() - 0.5) * 0.1).ToArray();
-
-        // Initialize training metrics
-        episodeRewards = new List<double>();
-        policyLosses = new List<double>();
-        valueLosses = new List<double>();
-        entropyValues = new List<double>();
-
-        // Initialize BatchNorm statistics
-        runningMean = new double[3];
-        runningVar = new double[3];
-        valueRunningMean = new double[3];
-        valueRunningVar = new double[3];
-
-        for (int i = 0; i < 3; i++)
+        public NeuralNetwork(List<int> layerSizes)
         {
-            runningVar[i] = 1.0;
-            valueRunningVar[i] = 1.0;
+            this.layerSizes = layerSizes;
+            InitializeParameters();
         }
 
-        // Initialize BatchNorm parameters
-        batchNormGamma = new double[3][];
-        batchNormBeta = new double[3][];
-        valueBatchNormGamma = new double[3][];
-        valueBatchNormBeta = new double[3][];
-
-        for (int i = 0; i < 3; i++)
+        private void InitializeParameters()
         {
-            int layerSize = (i == 0) ? HIDDEN_LAYER_1_SIZE :
-                            (i == 1) ? HIDDEN_LAYER_2_SIZE : HIDDEN_LAYER_3_SIZE;
-
-            batchNormGamma[i] = new double[layerSize];
-            batchNormBeta[i] = new double[layerSize];
-            valueBatchNormGamma[i] = new double[layerSize];
-            valueBatchNormBeta[i] = new double[layerSize];
-
-            // Initialize gamma and beta
-            for (int j = 0; j < layerSize; j++)
+            for (int i = 0; i < layerSizes.Count - 1; i++)
             {
-                batchNormGamma[i][j] = 0.5;   // Less aggressive than 1.0
-                batchNormBeta[i][j] = 0.0;   // Small shift
+                int inputSize = layerSizes[i];
+                int outputSize = layerSizes[i + 1];
 
-                valueBatchNormGamma[i][j] = 0.5;
-                valueBatchNormBeta[i][j] = 0.0;
+                Matrix<float> weight = CreateMatrix(outputSize, inputSize);
+                Vector<float> bias = CreateVector(outputSize);
+
+                weights.Add(weight);
+                biases.Add(bias);
             }
         }
 
-        // Policy Weight Velocities
-        velocityPW1 = helper.InitializeVelocity(policyWeights1);
-        velocityPW2 = helper.InitializeVelocity(policyWeights2);
-        velocityPW3 = helper.InitializeVelocity(policyWeights3);
-        velocityPWOutput = helper.InitializeVelocity(policyWeightsOutput);
-
-        // Value Weight Velocities
-        velocityVW1 = helper.InitializeVelocity(policyWeights1);
-        velocityVW2 = helper.InitializeVelocity(policyWeights2);
-        velocityVW3 = helper.InitializeVelocity(policyWeights3);
-        velocityVWOutput = helper.InitializeVelocity(policyWeightsOutput);
-
-        // Policy Bias Velocities
-        velocityBPW1 = helper.InitializeVelocity(policyBias1);
-        velocityBPW2 = helper.InitializeVelocity(policyBias2);
-        velocityBPW3 = helper.InitializeVelocity(policyBias3);
-        velocityBPWOutput = helper.InitializeVelocity(policyOutputBias);
-
-        // Value Bias Velocities
-        velocityBVW1 = helper.InitializeVelocity(valueBias1);
-        velocityBVW2 = helper.InitializeVelocity(valueBias2);
-        velocityBVW3 = helper.InitializeVelocity(valueBias3);
-        velocityBVWOutput = helper.InitializeVelocity(valueOutputBias);
-    }
-
-    /// <summary>
-    /// Performs a forward pass through the policy network to predict action probabilities.
-    /// </summary>
-    /// <param name="input">The current state as a vector</param>
-    /// <param name="isTraining">Indicates if the model is in training mode</param>
-    /// <returns>A probability distribution over possible actions</returns>
-    private double[] PolicyForward(double[] input, bool isTraining = true)
-    {
-        // First layer
-        var z1 = helper.LinearLayer(input, policyWeights1, policyBias1);
-        var bn1 = BatchNormalize(z1, 0, isTraining); // Layer index 0
-        var layer1 = helper.ELU(bn1);
-
-        // Second layer
-        var z2 = helper.LinearLayer(layer1, policyWeights2, policyBias2);
-        var bn2 = BatchNormalize(z2, 1, isTraining); // Layer index 1
-        var layer2 = helper.ELU(bn2);
-
-        // Third layer
-        var z3 = helper.LinearLayer(layer2, policyWeights3, policyBias3);
-        var bn3 = BatchNormalize(z3, 2, isTraining); // Layer index 2
-        var layer3 = helper.ELU(bn3);
-
-        // Output layer - typically no BatchNorm on output layer
-        var output = helper.LinearLayer(layer3, policyWeightsOutput, policyOutputBias);
-
-        var maxlogits = output.Max();
-        double explorationScale = Math.Max(0.1, 1.0 - curentEpisode * 0.001); // Decays over time
-
-        for (int i = 0; i < output.Length; i++)
+        private Matrix<float> CreateMatrix(int rows, int cols)
         {
-            output[i] *= explorationScale; // Subtract maxlogits for numerical stability
-        }
+            var matrix = Matrix<float>.Build.Dense(rows, cols);
 
-        var probabilities = helper.Softmax(output);
-        return probabilities;
-    }
-
-
-    /// <summary>
-    /// Normalizes a batch of data using batch normalization.
-    /// </summary>
-    /// <param name="layer">The input layer values</param>
-    /// <param name="layerIndex">Index of the layer being normalized</param>
-    /// <param name="isTraining">Indicates if the model is in training mode</param>
-    /// <returns>Normalized values for the given layer</returns>
-    private double[] BatchNormalize(double[] layer, int layerIndex, bool isTraining)
-    {
-        int layerSize = layer.Length;
-        double[] normalized = new double[layerSize];
-
-        // Parameters for this layer (you need to add these to your class)
-        double[] gamma = batchNormGamma[layerIndex]; // Scale parameter (initialized to 1s)
-        double[] beta = batchNormBeta[layerIndex];   // Shift parameter (initialized to 0s)
-
-        // Calculate batch statistics
-        double mean = 0, variance = 0;
-
-        if (isTraining)
-        {
-            // Compute mean
-            for (int i = 0; i < layerSize; i++)
+            // Xavier initialization
+            float scale = (float)Math.Sqrt(6.0 / (rows + cols));
+            for (int i = 0; i < rows; i++)
             {
-                mean += layer[i];
-            }
-            mean /= layerSize;
-
-            // Compute variance
-            for (int i = 0; i < layerSize; i++)
-            {
-                double diff = layer[i] - mean;
-                variance += diff * diff;
-            }
-            variance /= layerSize;
-
-            // Update running statistics for inference
-            runningMean[layerIndex] = MOMENTUM * runningMean[layerIndex] + (1 - MOMENTUM) * mean;
-            runningVar[layerIndex] = MOMENTUM * runningVar[layerIndex] + (1 - MOMENTUM) * variance;
-        }
-        else
-        {
-            // Use running statistics during inference
-            mean = runningMean[layerIndex];
-            variance = runningVar[layerIndex];
-        }
-
-        // Small constant to avoid division by zero
-        double epsilon = 1e-5;
-
-        // Normalize and apply scale and shift
-        for (int i = 0; i < layerSize; i++)
-        {
-            normalized[i] = gamma[i] * ((layer[i] - mean) / Math.Sqrt(variance + epsilon)) + beta[i];
-        }
-
-        return normalized;
-    }
-
-    /// <summary>
-    /// Computes advantages using Generalized Advantage Estimation (GAE).
-    /// </summary>
-    /// <param name="rewards">List of rewards from the episode</param>
-    /// <param name="values">List of estimated state values</param>
-    /// <returns>List of normalized advantages</returns>
-    private List<double> ComputeAdvantages(List<double> rewards, List<double> values)
-    {
-        List<double> advantages = new List<double>();
-        double nextValue = 0;
-        double advantage = 0;
-        const double LAMBDA = 0.95;
-
-        for (int t = rewards.Count - 1; t >= 0; t--)
-        {
-            double delta = rewards[t] + GAMMA * nextValue - values[t];
-            advantage = delta + GAMMA * LAMBDA * advantage;
-            advantages.Add(advantage);
-            nextValue = values[t];
-        }
-
-        advantages.Reverse(); // Reverse at the end instead of using Insert(0, value)
-
-        // Normalize advantages
-        if (advantages.Count > 0)
-        {
-            double mean = advantages.Average();
-            double std = Math.Sqrt(advantages.Average(x => Math.Pow(x - mean, 2)) + 1e-5);
-            return advantages.Select(a => (a - mean) / std).ToList();
-        }
-        return advantages;
-    }
-    /// <summary>
-    /// Computes a forward pass through the value network to estimate state value.
-    /// </summary>
-    /// <param name="input">The current state as a vector</param>
-    /// <param name="isTraining">Indicates if the model is in training mode</param>
-    /// <returns>A single scalar value representing the estimated value of the state</returns>
-    private double ValueForward(double[] input, bool isTraining = true)
-    {
-        // First layer
-        var z1 = helper.LinearLayer(input, valueWeights1, valueBias1);
-        var bn1 = BatchNormalizeValue(z1, 0, isTraining); // Layer index 0
-        var layer1 = helper.ELU(bn1);
-
-        // Second layer
-        var z2 = helper.LinearLayer(layer1, valueWeights2, valueBias2);
-        var bn2 = BatchNormalizeValue(z2, 1, isTraining); // Layer index 1
-        var layer2 = helper.ELU(bn2);
-
-        // Third layer
-        var z3 = helper.LinearLayer(layer2, valueWeights3, valueBias3);
-        var bn3 = BatchNormalizeValue(z3, 2, isTraining); // Layer index 2
-        var layer3 = helper.ELU(bn3);
-
-        // Output layer - typically no BatchNorm on output layer for value function
-        var output = helper.LinearLayer(layer3, valueWeightsOutput, valueOutputBias);
-        return output[0];  // Single value output
-    }
-
-
-    /// <summary>
-    /// Normalizes a batch of data using batch normalization.
-    /// </summary>
-    /// <param name="layer">The input layer values</param>
-    /// <param name="layerIndex">Index of the layer being normalized</param>
-    /// <param name="isTraining">Indicates if the model is in training mode</param>
-    /// <returns>Normalized values for the given layer</returns>
-    private double[] BatchNormalizeValue(double[] layer, int layerIndex, bool isTraining)
-    {
-        int layerSize = layer.Length;
-        double[] normalized = new double[layerSize];
-
-        // Parameters for this layer
-        double[] gamma = valueBatchNormGamma[layerIndex]; // Scale parameter
-        double[] beta = valueBatchNormBeta[layerIndex];   // Shift parameter
-
-        // Calculate batch statistics
-        double mean = 0, variance = 0;
-
-        if (isTraining)
-        {
-            // Compute mean
-            for (int i = 0; i < layerSize; i++)
-            {
-                mean += layer[i];
-            }
-            mean /= layerSize;
-
-            // Compute variance
-            for (int i = 0; i < layerSize; i++)
-            {
-                double diff = layer[i] - mean;
-                variance += diff * diff;
-            }
-            variance /= layerSize;
-
-            // Update running statistics for inference
-            valueRunningMean[layerIndex] = MOMENTUM * valueRunningMean[layerIndex] + (1 - MOMENTUM) * mean;
-            valueRunningVar[layerIndex] = MOMENTUM * valueRunningVar[layerIndex] + (1 - MOMENTUM) * variance;
-        }
-        else
-        {
-            // Use running statistics during inference
-            mean = valueRunningMean[layerIndex];
-            variance = valueRunningVar[layerIndex];
-        }
-
-        // Small constant to avoid division by zero
-        double epsilon = 1e-5;
-
-        // Normalize and apply scale and shift
-        for (int i = 0; i < layerSize; i++)
-        {
-            normalized[i] = gamma[i] * ((layer[i] - mean) / Math.Sqrt(variance + epsilon)) + beta[i];
-        }
-
-        return normalized;
-    }
-
-    /// <summary>
-    /// Collects a trajectory from the environment by running an episode.
-    /// </summary>
-    /// <param name="env">The game environment</param>
-    /// <returns>A trajectory object containing states, actions, rewards, and total episode reward</returns>
-    private (TrajectoryData trajectory, double totalReward) CollectTrajectory(GameEnvironment env)
-    {
-        var trajectory = new TrajectoryData();
-        double totalReward = 0;
-        double[] state = env.GetState();
-        bool done = false;
-
-        while (!done)
-        {
-            double[] stateVector = state.Select(s => (double)s).ToArray();
-            double[] actionProbs = PolicyForward(stateVector);
-            int action = helper.SampleAction(actionProbs);
-
-            double actionProb = actionProbs[action];
-            double valueEstimate = ValueForward(stateVector);
-            trajectory.AddStep(stateVector, action, actionProb, valueEstimate);
-
-            var (nextState, reward, isDone) = env.Step(action);
-            totalReward += reward;
-            trajectory.rewards.Add(reward);
-
-            if (isDone)
-            {
-                done = true;
-                trajectory.advantages = ComputeAdvantages(trajectory.rewards, trajectory.values);
-            }
-
-            state = nextState;
-        }
-        return (trajectory, totalReward);
-    }
-
-    /// <summary>
-    /// Trains the PPO model using collected data over multiple episodes.
-    /// </summary>
-    /// <param name="env">The game environment</param>
-    /// <param name="episodes">Number of training episodes</param>
-    /// <param name="modelPath">File path to save the trained model</param>
-    /// <param name="progressPath">File path to save training progress</param>
-    public void Train(GameEnvironment env, int episodes, string modelPath, string progressPath)
-    {
-        double bestReward = double.MinValue;
-        double averageReward = 0;
-        int episodesSinceImprovement = 0;
-        int episode = 0;
-        if (File.Exists(progressPath) && File.Exists(modelPath))
-        {
-            var progress = LoadProgress(progressPath);
-            episode = progress.episode;
-            bestReward = progress.bestReward;
-            LoadModel(modelPath);
-        }
-        for (; episode < episodes; episode++)
-        {
-            curentEpisode = episode;
-            var (trajectory, totalReward) = CollectTrajectory(env);
-
-            // Update networks multiple times with the collected data
-            for (int epoch = 0; epoch < EPOCHS; epoch++)
-            {
-                var batchIndices = Enumerable.Range(0, trajectory.states.Count)
-                    .OrderBy(x => random.Next())
-                    .ToList();
-
-                for (int i = 0; i < batchIndices.Count; i += BATCH_SIZE)
+                for (int j = 0; j < cols; j++)
                 {
-                    var batchSlice = batchIndices.Skip(i).Take(BATCH_SIZE);
-                    UpdateNetworksBatch(trajectory, batchSlice.ToList());
+                    matrix[i, j] = (float)((random.NextDouble() * 2 - 1) * scale);
                 }
             }
 
-            // Track metrics
-            episodeRewards.Add(totalReward);
+            return matrix;
+        }
 
-            totalRewardInEpisode = totalReward;
-            averageReward = episodeRewards.TakeLast(5).Average(); //take an avrege of 5 episodes (5 generations)
-            // Log progress
-            if (episode % 5 == 0)
+        private Vector<float> CreateVector(int size)
+        {
+            return Vector<float>.Build.Dense(size);
+        }
+
+        public Vector<float> Forward(Vector<float> input)
+        {
+            Vector<float> activation = input;
+
+            for (int i = 0; i < weights.Count - 1; i++)
             {
-                policyLossesfordispaly = policyLosses.LastOrDefault();
-                Value_Loss = valueLosses.LastOrDefault();
-                Entropy = entropyValues.LastOrDefault();
-                SaveProgress(progressPath, episode, bestReward, episodeRewards);
+                activation = weights[i].Multiply(activation).Add(biases[i]);
+                activation = ApplyReLU(activation);
             }
 
-            // Save best model
-            if (averageReward > bestReward)
+            // Output layer
+            activation = weights[weights.Count - 1].Multiply(activation).Add(biases[weights.Count - 1]);
+
+            return activation;
+        }
+
+        private Vector<float> ApplyReLU(Vector<float> input)
+        {
+            return Vector<float>.Build.DenseOfEnumerable(
+                input.Select(x => Math.Max(0, x))
+            );
+        }
+
+        public List<Matrix<float>> GetWeights() => weights;
+
+        public List<Vector<float>> GetBiases() => biases;
+
+        public void SetWeights(List<Matrix<float>> newWeights) => weights = newWeights;
+
+        public void SetBiases(List<Vector<float>> newBiases) => biases = newBiases;
+    }
+
+    /// <summary>
+    /// Adam optimizer implementation
+    /// </summary>
+    public class AdamOptimizer
+    {
+        private float learningRate;
+        private float beta1;
+        private float beta2;
+        private float epsilon;
+        private List<Matrix<float>> mWeights;
+        private List<Vector<float>> mBiases;
+        private List<Matrix<float>> vWeights;
+        private List<Vector<float>> vBiases;
+        private int t = 0;
+
+        public AdamOptimizer(float learningRate = 0.001f, float beta1 = 0.9f, float beta2 = 0.999f, float epsilon = 1e-8f)
+        {
+            this.learningRate = learningRate;
+            this.beta1 = beta1;
+            this.beta2 = beta2;
+            this.epsilon = epsilon;
+        }
+
+        public void Initialize(List<Matrix<float>> weights, List<Vector<float>> biases)
+        {
+            mWeights = new List<Matrix<float>>();
+            mBiases = new List<Vector<float>>();
+            vWeights = new List<Matrix<float>>();
+            vBiases = new List<Vector<float>>();
+
+            foreach (var weight in weights)
             {
-                bestReward = averageReward;
-                Console.WriteLine("Saving best model...");
-                SaveModel(modelPath, episode);
-                episodesSinceImprovement = 0;
+                mWeights.Add(Matrix<float>.Build.Dense(weight.RowCount, weight.ColumnCount));
+                vWeights.Add(Matrix<float>.Build.Dense(weight.RowCount, weight.ColumnCount));
             }
-            else
+
+            foreach (var bias in biases)
             {
-                episodesSinceImprovement++;
+                mBiases.Add(Vector<float>.Build.Dense(bias.Count));
+                vBiases.Add(Vector<float>.Build.Dense(bias.Count));
+            }
+        }
+
+        public void Update(
+            List<Matrix<float>> weights,
+            List<Vector<float>> biases,
+            List<Matrix<float>> gradWeights,
+            List<Vector<float>> gradBiases)
+        {
+            t++;
+            float correctedLR = learningRate * (float)Math.Sqrt(1 - Math.Pow(beta2, t)) / (1 - (float)Math.Pow(beta1, t));
+
+            for (int i = 0; i < weights.Count; i++)
+            {
+                // Update weight momentum and RMS
+                mWeights[i] = mWeights[i].Multiply(beta1).Add(gradWeights[i].Multiply(1 - beta1));
+                vWeights[i] = vWeights[i].Multiply(beta2).Add(gradWeights[i].PointwiseMultiply(gradWeights[i]).Multiply(1 - beta2));
+
+                // Calculate update
+                Matrix<float> update = CalculateUpdate(mWeights[i], vWeights[i], correctedLR);
+                weights[i] = weights[i].Subtract(update);
+
+                // Update bias momentum and RMS
+                mBiases[i] = mBiases[i].Multiply(beta1).Add(gradBiases[i].Multiply(1 - beta1));
+                vBiases[i] = vBiases[i].Multiply(beta2).Add(gradBiases[i].PointwiseMultiply(gradBiases[i]).Multiply(1 - beta2));
+
+                // Calculate bias update
+                Vector<float> biasUpdate = CalculateUpdate(mBiases[i], vBiases[i], correctedLR);
+                biases[i] = biases[i].Subtract(biasUpdate);
+            }
+        }
+
+        private Matrix<float> CalculateUpdate(Matrix<float> m, Matrix<float> v, float correctedLR)
+        {
+            var update = Matrix<float>.Build.Dense(m.RowCount, m.ColumnCount);
+
+            for (int i = 0; i < m.RowCount; i++)
+            {
+                for (int j = 0; j < m.ColumnCount; j++)
+                {
+                    update[i, j] = correctedLR * m[i, j] / ((float)Math.Sqrt(v[i, j]) + epsilon);
+                }
+            }
+
+            return update;
+        }
+
+        private Vector<float> CalculateUpdate(Vector<float> m, Vector<float> v, float correctedLR)
+        {
+            var update = Vector<float>.Build.Dense(m.Count);
+
+            for (int i = 0; i < m.Count; i++)
+            {
+                update[i] = correctedLR * m[i] / ((float)Math.Sqrt(v[i]) + epsilon);
+            }
+
+            return update;
+        }
+    }
+
+    /// <summary>
+    /// PPO Agent implementation
+    /// </summary>
+    public class PPOAgent
+    {
+        public NeuralNetwork actorNetwork;
+        public NeuralNetwork criticNetwork;
+        public AdamOptimizer actorOptimizer;
+        public AdamOptimizer criticOptimizer;
+        private int stateSize;
+        private int actionSize;
+        private float gamma = 0.99f;
+        private float gaeLambda = 0.95f;
+        private float clipEpsilon = 0.15f;
+        private float valueCoeff = 0.7f;
+        private float entropyCoeff = 0.5f;
+        private int batchSize = 64;
+        private int epochs = 10;
+        private Random random = new Random();
+
+        public PPOAgent(int stateSize, int actionSize)
+        {
+            this.stateSize = stateSize;
+            this.actionSize = actionSize;
+
+            // Initialize actor network (policy)
+            actorNetwork = new NeuralNetwork(new List<int> { stateSize, 64, 64, actionSize });
+
+            // Initialize critic network (value function)
+            criticNetwork = new NeuralNetwork(new List<int> { stateSize, 64, 64, 1 });
+
+            // Initialize optimizers
+            actorOptimizer = new AdamOptimizer();
+            criticOptimizer = new AdamOptimizer();
+
+            actorOptimizer.Initialize(actorNetwork.GetWeights(), actorNetwork.GetBiases());
+            criticOptimizer.Initialize(criticNetwork.GetWeights(), criticNetwork.GetBiases());
+        }
+
+        public int ChooseAction(Vector<float> state)
+        {
+            Console.WriteLine($"State: {string.Join(", ", state)}");
+            Vector<float> logits = actorNetwork.Forward(state);
+            Console.WriteLine($"Logits: {string.Join(", ", logits)}");
+            Vector<float> probs = Softmax(logits);
+            Console.WriteLine($"Probabilities: {string.Join(", ", probs)}");
+            // Sample action from probability distribution
+            float sample = (float)random.NextDouble();
+            float cumulativeProbability = 0;
+
+            for (int i = 0; i < actionSize; i++)
+            {
+                cumulativeProbability += probs[i];
+                if (sample <= cumulativeProbability)
+                {
+                    return i;
+                }
+            }
+
+            return actionSize - 1;
+        }
+
+        public float GetLogProbability(Vector<float> state, int action)
+        {
+            Vector<float> logits = actorNetwork.Forward(state);
+            Vector<float> probs = Softmax(logits);
+            return (float)Math.Log(probs[action] + 1e-10);
+        }
+
+        public float GetValue(Vector<float> state)
+        {
+            Vector<float> value = criticNetwork.Forward(state);
+            return value[0];
+        }
+
+        private Vector<float> Softmax(Vector<float> logits)
+        {
+            float maxLogit = logits.Max();
+            Vector<float> expValues = Vector<float>.Build.DenseOfEnumerable(
+                logits.Select(x => (float)Math.Exp(x - maxLogit))
+            );
+
+            float sumExpValues = expValues.Sum();
+            return expValues.Divide(sumExpValues);
+        }
+
+        public void Train(List<Experience> experiences)
+        {
+            // Calculate returns and advantages
+            List<float> returns = new List<float>();
+            List<float> advantages = new List<float>();
+            ComputeReturnsAndAdvantages(experiences, returns, advantages);
+
+            // Train for multiple epochs
+            for (int epoch = 0; epoch < epochs; epoch++)
+            {
+                // Create mini-batches
+                List<int> indices = Enumerable.Range(0, experiences.Count).ToList();
+                Shuffle(indices);
+
+                for (int i = 0; i < experiences.Count; i += batchSize)
+                {
+                    List<int> batchIndices = indices.Skip(i).Take(batchSize).ToList();
+                    UpdateNetworks(experiences, returns, advantages, batchIndices);
+                }
+            }
+        }
+
+        private void ComputeReturnsAndAdvantages(List<Experience> experiences, List<float> returns, List<float> advantages)
+        {
+            float gae = 0f;
+            float nextValue = 0f;
+
+            for (int i = experiences.Count - 1; i >= 0; i--)
+            {
+                Experience exp = experiences[i];
+                float gammaH = exp.Done ? 0f : gamma;
+                float delta = exp.Reward + (gammaH * nextValue) - exp.Value;
+                float gaeH = exp.Done ? 0f : gae;
+                gae = delta + gamma * gaeLambda * gaeH;
+                advantages.Insert(0, gae);
+
+                float returnValue = gae + exp.Value;
+                returns.Insert(0, returnValue);
+
+                nextValue = exp.Value;
+            }
+
+            // Normalize advantages
+            float meanAdvantage = advantages.Average();
+            float stdAdvantage = (float)Math.Sqrt(advantages.Select(a => Math.Pow(a - meanAdvantage, 2)).Average() + 1e-8f);
+            for (int i = 0; i < advantages.Count; i++)
+                advantages[i] = (advantages[i] - meanAdvantage) / (stdAdvantage + (float)1e-8);
+        }
+
+        private void UpdateNetworks(List<Experience> experiences, List<float> returns, List<float> advantages, List<int> batchIndices)
+        {
+            // Initialize gradient accumulators
+            List<Matrix<float>> actorGradWeights = InitializeGradients(actorNetwork.GetWeights());
+            List<Vector<float>> actorGradBiases = InitializeGradients(actorNetwork.GetBiases());
+            List<Matrix<float>> criticGradWeights = InitializeGradients(criticNetwork.GetWeights());
+            List<Vector<float>> criticGradBiases = InitializeGradients(criticNetwork.GetBiases());
+
+            float actorLoss = 0;
+            float criticLoss = 0;
+
+            foreach (int idx in batchIndices)
+            {
+                Experience exp = experiences[idx];
+                float advantage = advantages[idx];
+                float target = returns[idx];
+
+                // === Actor (policy) loss ===
+                Vector<float> logits = actorNetwork.Forward(exp.State);
+                Vector<float> probs = Softmax(logits);
+
+                float newLogProb = (float)Math.Log(probs[exp.Action] + 1e-10f);
+                float ratio = (float)Math.Exp(newLogProb - exp.LogProbability);
+                float surrogate1 = ratio * advantage;
+                float surrogate2 = Math.Clamp(ratio, 1 - clipEpsilon, 1 + clipEpsilon) * advantage;
+                float policyLoss = -Math.Min(surrogate1, surrogate2);
+
+                // Entropy bonus
+                float entropy = -probs.Sum(p => p * (float)Math.Log(p + 1e-10f));
+
+                // === Critic (value) loss ===
+                float value = criticNetwork.Forward(exp.State)[0];
+                float v_pred_clipped = exp.Value + Math.Clamp(value - exp.Value, -clipEpsilon, clipEpsilon);
+                float v_loss1 = MathF.Pow(value - target, 2);
+                float v_loss2 = MathF.Pow(v_pred_clipped - target, 2);
+                float valueLoss = valueCoeff * Math.Max(v_loss1, v_loss2);
+
+                // === Accumulate total losses (for logging only) ===
+                actorLoss += policyLoss - entropyCoeff * entropy;
+                criticLoss += valueLoss;
+
+                // === Calculate gradients and backprop ===
+                CalculateGradients(
+                    exp,
+                    advantage,
+                    target,
+                    actorGradWeights,
+                    actorGradBiases,
+                    criticGradWeights,
+                    criticGradBiases
+                );
+            }
+
+            // === Normalize gradients by batch size ===
+            NormalizeGradients(actorGradWeights, actorGradBiases, batchIndices.Count);
+            NormalizeGradients(criticGradWeights, criticGradBiases, batchIndices.Count);
+
+            // === Optional: Clip gradients by global norm ===
+            float maxGradNorm = 0.5f;  // or tune this value
+            ClipGradients(actorGradWeights, actorGradBiases, maxGradNorm);
+            ClipGradients(criticGradWeights, criticGradBiases, maxGradNorm);
+
+            // === Apply optimizer updates ===
+            actorOptimizer.Update(actorNetwork.GetWeights(), actorNetwork.GetBiases(), actorGradWeights, actorGradBiases);
+            criticOptimizer.Update(criticNetwork.GetWeights(), criticNetwork.GetBiases(), criticGradWeights, criticGradBiases);
+
+            // === Logging (optional) ===
+            Console.WriteLine($"[PPO] Actor Loss: {actorLoss / batchIndices.Count}, Critic Loss: {criticLoss / batchIndices.Count}");
+
+
+        }
+
+        private List<Matrix<float>> InitializeGradients(List<Matrix<float>> weights)
+        {
+            return weights.Select(w => Matrix<float>.Build.Dense(w.RowCount, w.ColumnCount, 0f)).ToList();
+        }
+
+        private List<Vector<float>> InitializeGradients(List<Vector<float>> biases)
+        {
+            return biases.Select(b => Vector<float>.Build.Dense(b.Count, 0f)).ToList();
+        }
+
+        private void NormalizeGradients(List<Matrix<float>> gradWeights, List<Vector<float>> gradBiases, float batchSize)
+        {
+            for (int i = 0; i < gradWeights.Count; i++)
+            {
+                gradWeights[i] /= batchSize;
+                gradBiases[i] /= batchSize;
+            }
+        }
+
+        private void ClipGradients(List<Matrix<float>> gradWeights, List<Vector<float>> gradBiases, float maxNorm)
+        {
+            float totalNorm = 0f;
+
+            foreach (var gw in gradWeights)
+                totalNorm += gw.PointwisePower(2).Enumerate().Sum();
+
+            foreach (var gb in gradBiases)
+                totalNorm += gb.PointwisePower(2).Sum();
+
+            totalNorm = MathF.Sqrt(totalNorm);
+
+            if (totalNorm > maxNorm)
+            {
+                float scale = maxNorm / (totalNorm + 1e-6f);  // avoid div zero
+
+                for (int i = 0; i < gradWeights.Count; i++)
+                    gradWeights[i].MapInplace(x => x * scale);
+
+                for (int i = 0; i < gradBiases.Count; i++)
+                    gradBiases[i].MapInplace(x => x * scale);
+            }
+        }
+
+        private void CalculateGradients(
+    Experience exp,
+    float advantage,
+    float target,
+    List<Matrix<float>> actorGradWeights,
+    List<Vector<float>> actorGradBiases,
+    List<Matrix<float>> criticGradWeights,
+    List<Vector<float>> criticGradBiases)
+        {
+            // === ACTOR GRADIENTS ===
+
+            // Forward pass to get logits
+            Vector<float> actorOutput = actorNetwork.Forward(exp.State);
+
+            // Convert logits to probabilities (softmax)
+            Vector<float> probs = Softmax(actorOutput);
+
+            // Calculate gradient of log π(a|s)
+            Vector<float> gradLogPi = Vector<float>.Build.Dense(probs.Count, i => (i == exp.Action ? 1f : 0f) - probs[i]);
+
+            // Weight by advantage (PPO surrogate signal)
+            Vector<float> actorGrad = gradLogPi * advantage;
+
+            // Add entropy gradient to encourage exploration
+            Vector<float> entropyGrad = probs.Map(p => -MathF.Log(p + 1e-10f) - 1f) * entropyCoeff;
+
+            // Combine policy + entropy gradients
+            actorGrad += entropyGrad;
+
+            // Backpropagate actor gradients
+            BackpropagateGradients(actorNetwork, exp.State, actorGrad, actorGradWeights, actorGradBiases);
+
+            // === CRITIC GRADIENTS ===
+
+            // Forward pass to get value estimate
+            Vector<float> criticOutput = criticNetwork.Forward(exp.State);
+            float valueEstimate = criticOutput[0];
+
+            // Compute critic gradient: ∇ (V(s) - target)^2 = 2 * (V(s) - target)
+            float valueError = valueEstimate - target;
+            Vector<float> criticGrad = Vector<float>.Build.Dense(1, 2f * valueError * valueCoeff);
+
+            // Backpropagate critic gradients
+            BackpropagateGradients(criticNetwork, exp.State, criticGrad, criticGradWeights, criticGradBiases);
+        }
+
+        private void BackpropagateGradients(
+    NeuralNetwork network,
+    Vector<float> input,
+    Vector<float> outputGrad,  // ∂L/∂output, shape = last layer size
+    List<Matrix<float>> gradWeights,
+    List<Vector<float>> gradBiases)
+        {
+            var weights = network.GetWeights();
+            var biases = network.GetBiases();
+
+            var activations = new List<Vector<float>> { input };
+            var zs = new List<Vector<float>>();
+
+            Vector<float> activation = input;
+
+            // === Forward pass: collect activations and pre-activations (zs) ===
+            for (int i = 0; i < weights.Count; i++)
+            {
+                var z = weights[i].Multiply(activation).Add(biases[i]);
+                zs.Add(z);
+
+                // Apply hidden activations (ReLU)
+                if (i < weights.Count - 1)
+                {
+                    activation = ApplyReLU(z);
+                }
+                else
+                {
+                    // Output layer: check for non-linear activations if used
+                    // Here we assume linear, but you can add tanh/sigmoid handling if needed
+                    activation = z;
+                }
+
+                activations.Add(activation);
+            }
+
+            // === Backward pass ===
+            Vector<float> delta = outputGrad;
+
+            for (int layer = weights.Count - 1; layer >= 0; layer--)
+            {
+                var aPrev = activations[layer];      // input to this layer
+                var zCurrent = zs[layer];            // pre-activation of this layer
+
+                if (layer < weights.Count - 1)
+                {
+                    // Hidden layers: apply ReLU derivative
+                    delta = delta.PointwiseMultiply(ApplyReLUDerivative(zCurrent));
+                }
+                else
+                {
+                    delta = delta.PointwiseMultiply(ApplyReLUDerivative(zCurrent));
+                }
+
+                // Accumulate gradients
+                gradWeights[layer] += delta.OuterProduct(aPrev);
+                gradBiases[layer] += delta;
+
+                if (layer > 0)
+                {
+                    // Backpropagate to previous layer
+                    delta = weights[layer].TransposeThisAndMultiply(delta);
+                }
+            }
+        }
+
+        private Vector<float> ApplyReLU(Vector<float> input)
+        {
+            return input.Map(x => Math.Max(0f, x));
+        }
+
+        private Vector<float> ApplyReLUDerivative(Vector<float> input)
+        {
+            return input.Map(x => x > 0f ? 1f : 0f);
+        }
+
+        private Vector<float> ApplyTanhDerivative(Vector<float> input)
+        {
+            return input.Map(x =>
+            {
+                float t = MathF.Tanh(x);
+                return 1f - t * t;
+            });
+        }
+
+        private Vector<float> ApplySigmoidDerivative(Vector<float> input)
+        {
+            return input.Map(x =>
+            {
+                float s = 1f / (1f + MathF.Exp(-x));
+                return s * (1f - s);
+            });
+        }
+
+
+
+        private void Shuffle<T>(List<T> list)
+        {
+            int n = list.Count;
+            while (n > 1)
+            {
+                n--;
+                int k = random.Next(n + 1);
+                T value = list[k];
+                list[k] = list[n];
+                list[n] = value;
             }
         }
     }
 
     /// <summary>
-    /// Loads a model from a JSON file.
+    /// Main class for running PPO reinforcement learning
     /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="filePath"></param>
-    /// <returns></returns>
-    // Load the entire model including weights, biases, and batch norm stats
-    private void LoadModel(string filePath)
+    public class PPOTrainer
     {
-        if (!File.Exists(filePath))
-            throw new FileNotFoundException($"Model file not found at {filePath}");
+        private Game1 game;
+        private PPOAgent agent;
+        private int maxEpisodes;
+        private int stepsPerEpisode;
+        private int trainInterval;
+        private GameEnvironment gameEnv;
+        private List<float> totalReward = new List<float>();
 
-        try
+        public PPOTrainer(Game1 game, int stateSize, int actionSize, int maxEpisodes = 1000, int stepsPerEpisode = 2000, int trainInterval = 2000)
         {
-            string json = File.ReadAllText(filePath);
+            this.game = game;
+            this.maxEpisodes = maxEpisodes;
+            this.stepsPerEpisode = stepsPerEpisode;
+            this.trainInterval = trainInterval;
+            gameEnv = new GameEnvironment(game);
+            agent = new PPOAgent(stateSize, actionSize);
+        }
 
-            using (JsonDocument document = JsonDocument.Parse(json))
+        public async Task Train()
+        {
+            int totalSteps = 0;
+            List<Experience> experiences = new List<Experience>();
+
+            for (int episode = 0; episode < maxEpisodes; episode++)
             {
-                var root = document.RootElement;
+                Vector<float> state = gameEnv.GetState();
+                float episodeReward = 0;
 
-                policyWeights1 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "POLICY1"));
-                // Load policy network weights
-                policyWeights2 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "POLICY2"));
-                policyWeights3 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "POLICY3"));
-                policyWeightsOutput = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "POLICY_WEIGHTS_OUTPUT"));
-                policyBias1 = helper.SafeDeserialize1D(root, "POLICY_BIAS1");
-                policyBias2 = helper.SafeDeserialize1D(root, "POLICY_BIAS2");
-                policyBias3 = helper.SafeDeserialize1D(root, "POLICY_BIAS3");
-                policyOutputBias = helper.SafeDeserialize1D(root, "POLICY_OUTPUT_BIAS");
+                for (int step = 0; step < stepsPerEpisode; step++)
+                {
+                    // Choose action
+                    int action = agent.ChooseAction(state);
 
-                // Load value network weights
-                valueWeights1 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE1"));
-                valueWeights2 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE2"));
-                valueWeights3 = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE3"));
-                valueWeightsOutput = helper.ConvertTo2DArray(helper.SafeDeserialize2D(root, "VALUE_WEIGHTS_OUTPUT"));
+                    // Get log probability and value
+                    float logProb = agent.GetLogProbability(state, action);
+                    float value = agent.GetValue(state);
 
-                // Load BatchNorm statistics
-                runningMean = helper.SafeDeserialize1D(root, "VALUE_RUNNING_MEAN");
-                runningVar = helper.SafeDeserialize1D(root, "VALUE_RUNNING_VAR");
-                Console.WriteLine($"Running Mean: {string.Join(", ", runningMean)}");
+                    // Take action in environment
+                    Console.WriteLine($"Action: {action}");
+                    var (nextState, reward, done) = gameEnv.Step(action);
+
+                    // Store experience
+                    experiences.Add(new Experience
+                    {
+                        State = state,
+                        Action = action,
+                        Reward = reward,
+                        NextState = nextState,
+                        Done = done,
+                        LogProbability = logProb,
+                        Value = value
+                    });
+
+                    state = nextState;
+                    episodeReward += reward;
+                    totalSteps++;
+
+                    // Check if training is needed
+                    if (totalSteps % trainInterval == 0 || done)
+                    {
+                        // Train agent
+                        agent.Train(experiences);
+                        totalReward.Add(episodeReward);
+                        experiences.Clear();
+                    }
+
+                    if (done)
+                    {
+                        break;
+                    }
+                }
+
+                Console.WriteLine($"Episode {episode + 1}/{maxEpisodes}, Reward: {episodeReward}");
+
+                // Optionally save the model periodically
+                string jsonFilePath = "ppo_model_episode.json"; // Replace with your actual JSON file path
+                if (File.Exists(jsonFilePath))
+                {
+                    string jsonContent = File.ReadAllText(jsonFilePath);
+                    var model = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonContent);
+
+                    if (totalReward.Last() > (model != null && model.TryGetValue("TOTAL_Reward", out var value) && value is JsonElement jsonElement && jsonElement.ValueKind == JsonValueKind.Array
+                        ? jsonElement.EnumerateArray().Select(x => x.GetSingle()).Max()
+                        : float.MinValue))
+                    {
+                        SaveModel(agent, $"ppo_model_episode.json", episode + 1);
+                        Console.WriteLine($"Model saved at episode {episode + 1}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("JSON file not found.");
+                }
+
+                // Allow UI thread to process
+                await Task.Delay(1);
             }
-
-            Console.WriteLine($"Model successfully loaded from {filePath}");
         }
-        catch (Exception ex)
+        private void SaveModel(PPOAgent agent, string filePath, int episode = 1)
         {
-            Console.WriteLine($"Error loading model: {ex.Message}");
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// Loads the policy and value networks from a JSON file.
-    /// </summary>
-    /// <param name="filePath"></param>
-    /// <returns></returns>
-    /// <exception cref="InvalidOperationException"></exception>
-    public (int episode, double bestReward, List<double> recentRewards) LoadProgress(string filePath)
-    {
-        string json = File.ReadAllText(filePath);
-        var progress = JsonSerializer.Deserialize<JsonElement>(json);
-        string absolutePath = Path.GetFullPath(filePath);
-
-        Console.WriteLine($"Absolute Path: {absolutePath}");
-        Console.WriteLine(progress);
-
-        // Accessing specific properties:
-        if (progress.TryGetProperty("Episode", out var episodeProperty))
-        {
-            int episode = episodeProperty.GetInt32();
-            Console.WriteLine($"Episode: {episode}");
-        }
-        else
-        {
-            throw new InvalidOperationException("Failed to find 'Episode' in the deserialized JSON.");
-        }
-
-
-        var episodeA = progress.GetProperty("Episode").GetInt32();
-        var bestReward = progress.GetProperty("BestReward").GetDouble();
-        var recentRewards = progress.GetProperty("RecentRewards")
-                                    .EnumerateArray()
-                                    .Select(e => e.GetDouble())
-                                    .ToList();
-
-        return (episodeA, bestReward, recentRewards);
-    }
-
-    /// <summary>
-    /// 
-    /// </summary>
-    /// <param name="filePath"></param>
-    /// <param name="model"></param>
-    // Save the entire model including weights, biases, and batch norm stats
-    private void SaveModel(string filePath, int episode = 1)
-    {
-        var model = new
-        {
-            IN_EPISODE = episode,
-
-            // Policy network weights and biases
-            POLICY1 = helper.ConvertToJaggedArray(policyWeights1),
-            POLICY2 = helper.ConvertToJaggedArray(policyWeights2),
-            POLICY3 = helper.ConvertToJaggedArray(policyWeights3),
-            POLICY_WEIGHTS_OUTPUT = helper.ConvertToJaggedArray(policyWeightsOutput),
-            POLICY_BIAS1 = policyBias1,
-            POLICY_BIAS2 = policyBias2,
-            POLICY_BIAS3 = policyBias3,
-            POLICY_OUTPUT_BIAS = policyOutputBias,
-
-            // Value network weights
-            VALUE1 = helper.ConvertToJaggedArray(valueWeights1),
-            VALUE2 = helper.ConvertToJaggedArray(valueWeights2),
-            VALUE3 = helper.ConvertToJaggedArray(valueWeights3),
-            VALUE_WEIGHTS_OUTPUT = helper.ConvertToJaggedArray(valueWeightsOutput),
-
-            // BatchNorm statistics
-            VALUE_BIAS1 = valueBias1,
-            VALUE_BIAS2 = valueBias2,
-            VALUE_BIAS3 = valueBias3,
-            VALUE_OUTPUT_BIAS = valueOutputBias,
-
-            // Add batch norm parameters
-            POLICY_BATCH_NORM_GAMMA = batchNormGamma,
-            POLICY_BATCH_NORM_BETA = batchNormBeta,
-            VALUE_BATCH_NORM_GAMMA = valueBatchNormGamma,
-            VALUE_BATCH_NORM_BETA = valueBatchNormBeta,
-
-            // Add value network running stats
-            VALUE_RUNNING_MEAN = valueRunningMean,
-            VALUE_RUNNING_VAR = valueRunningVar
-        };
-
-        string json = JsonSerializer.Serialize(model, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(filePath, json);
-    }
-
-
-    /// <summary>
-    /// Saves the current training progress to a JSON file.
-    /// </summary>
-    /// <param name="filePath"></param>
-    /// <param name="episode"></param>
-    /// <param name="bestReward"></param>
-    /// <param name="recentRewards"></param>
-    public void SaveProgress(string filePath, int episode, double bestReward, List<double> recentRewards)
-    {
-        if (!File.Exists(filePath))
-        {
-            var newprogress = new
+            PPOHelper helper = new PPOHelper();
+            var model = new
             {
-                Episode = episode,
-                BestReward = bestReward,
-                RecentRewards = recentRewards
+                IN_EPISODE = episode,
+                TOTAL_Reward = totalReward,
+                IN_ACTOR_WEIGHTS = helper.ConvertToJaggedList(agent.actorNetwork.GetWeights()),  // For weights
+                IN_ACTOR_BIASES = helper.ConvertVectorsToJaggedList(agent.actorNetwork.GetBiases()), // For biases
+
+                IN_CRITIC_WEIGHTS = helper.ConvertToJaggedList(agent.criticNetwork.GetWeights()),
+                IN_CRITIC_BIASES = helper.ConvertVectorsToJaggedList(agent.criticNetwork.GetBiases())
+
+
             };
-            var newjson = JsonSerializer.Serialize(newprogress);
-            File.WriteAllText(filePath, newjson);
-            return;
-        }
-        var exsistingJson = File.ReadAllText(filePath);
-        var existingProgress = JsonSerializer.Deserialize<JsonElement>(exsistingJson);
-        var progress = new
-        {
-            Episode = episode,
-            BestReward = existingProgress.GetProperty("BestReward").GetDouble() < bestReward ? bestReward : existingProgress.GetProperty("BestReward").GetDouble(),
-            RecentRewards = recentRewards
-        };
-        var json = JsonSerializer.Serialize(progress);
-        File.WriteAllText(filePath, json);
-    }
 
-
-    private void UpdateNetworkWeights(double PolicyLoss, double ValueLoss, double entropyBonus)
-    {
-        // Calculate gradients and update policy network weights
-        // Update policy & value networks separately
-        UpdatePolicyNetworkWeights(PolicyLoss);
-        UpdateValueNetworkWeights(ValueLoss);
-
-        // Update policy & value biases separately
-        UpdatePolicyBiases(PolicyLoss);
-        UpdateValueBiases(ValueLoss);
-    }
-    private void UpdatePolicyBiases(double loss)
-    {
-        // Learning rate with decay
-        double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
-
-        // Update policy network layer 1 biases
-        for (int i = 0; i < policyBias1.Length; i++)
-        {
-            double gradient = loss * helper.CalculateLayerGradient(policyBias1[i]);
-
-            // Apply momentum correction
-            velocityBPW1[i] = 0.9 * velocityBPW1[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBPW1[i], -1.0, 1.0);
-
-            // Update bias using velocity
-            policyBias1[i] -= currentLearningRate * clippedUpdate;
-        }
-
-        // Update policy network layer 2 biases
-        for (int i = 0; i < policyBias2.Length; i++)
-        {
-            double gradient = loss * helper.CalculateLayerGradient(policyBias2[i]);
-            velocityBPW2[i] = 0.9 * velocityBPW2[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBPW2[i], -1.0, 1.0);
-            policyBias2[i] -= currentLearningRate * clippedUpdate;
-        }
-
-        // Update policy network layer 3 biases
-        for (int i = 0; i < policyBias3.Length; i++)
-        {
-            double gradient = loss * helper.CalculateLayerGradient(policyBias3[i]);
-            velocityBPW3[i] = 0.9 * velocityBPW3[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBPW3[i], -1.0, 1.0);
-            policyBias3[i] -= currentLearningRate * clippedUpdate;
-        }
-
-        // Update policy output biases
-        for (int i = 0; i < policyOutputBias.Length; i++)
-        {
-            double gradient = loss * helper.CalculateOutputGradient(policyOutputBias[i]);
-            velocityBPWOutput[i] = 0.9 * velocityBPWOutput[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBPWOutput[i], -1.0, 1.0);
-            policyOutputBias[i] -= currentLearningRate * clippedUpdate;
+            string json = JsonSerializer.Serialize(model, new JsonSerializerOptions { WriteIndented = true });
+            string parentDirectory = Directory.GetParent(Directory.GetParent(Directory.
+            GetParent(Directory.GetCurrentDirectory()).FullName).FullName).FullName;
+            string fullPath = Path.Combine(parentDirectory + "\\statistics_R_files", filePath);
+            File.WriteAllText(fullPath, json);
         }
     }
 
-    private void UpdateValueBiases(double loss)
-    {
-        // Learning rate with decay
-        double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
 
-        // Update value network layer 1 biases
-        for (int i = 0; i < valueBias1.Length; i++)
-        {
-            double gradient = loss * helper.CalculateLayerGradient(valueBias1[i]);
-
-            // Apply momentum correction
-            velocityBVW1[i] = 0.9 * velocityBVW1[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBVW1[i], -1.0, 1.0);
-
-            // Update bias using velocity
-            valueBias1[i] -= currentLearningRate * clippedUpdate;
-        }
-
-        // Update value network layer 2 biases
-        for (int i = 0; i < valueBias2.Length; i++)
-        {
-            double gradient = loss * helper.CalculateLayerGradient(valueBias2[i]);
-            velocityBVW2[i] = 0.9 * velocityBVW2[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBVW2[i], -1.0, 1.0);
-            valueBias2[i] -= currentLearningRate * clippedUpdate;
-        }
-
-        // Update value network layer 3 biases
-        for (int i = 0; i < valueBias3.Length; i++)
-        {
-            double gradient = loss * helper.CalculateLayerGradient(valueBias3[i]);
-            velocityBVW3[i] = 0.9 * velocityBVW3[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBVW3[i], -1.0, 1.0);
-            valueBias3[i] -= currentLearningRate * clippedUpdate;
-        }
-
-        // Update value output biases
-        for (int i = 0; i < valueOutputBias.Length; i++)
-        {
-            double gradient = loss * helper.CalculateOutputGradient(valueOutputBias[i]);
-            velocityBVWOutput[i] = 0.9 * velocityBVWOutput[i] + 0.1 * gradient;
-            double clippedUpdate = Math.Clamp(velocityBVWOutput[i], -1.0, 1.0);
-            valueOutputBias[i] -= currentLearningRate * clippedUpdate;
-        }
-    }
-
-    private void UpdatePolicyNetworkWeights(double loss, double entropyBonus = 0)
-    {
-        // Learning rate with decay
-        double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
-
-        // Update policy network layer 1
-        for (int i = 0; i < policyWeights1.GetLength(0); i++)
-        {
-            for (int j = 0; j < policyWeights1.GetLength(1); j++)
-            {
-                double gradient = helper.ComputePPOGradient(policyWeights1[i, j], loss, entropyBonus);
-                velocityPW1[i, j] = 0.7 * velocityPW1[i, j] + 0.3 * gradient; // Apply momentum
-                double clippedUpdate = helper.ClipGradient(velocityPW1[i, j]);
-                policyWeights1[i, j] -= currentLearningRate * clippedUpdate;
-            }
-        }
-
-        // Update policy network layer 2
-        for (int i = 0; i < policyWeights2.GetLength(0); i++)
-        {
-            for (int j = 0; j < policyWeights2.GetLength(1); j++)
-            {
-                double gradient = helper.ComputePPOGradient(policyWeights2[i, j], loss, entropyBonus);
-                velocityPW2[i, j] = 0.7 * velocityPW2[i, j] + 0.3 * gradient;
-                double clippedUpdate = helper.ClipGradient(velocityPW2[i, j]);
-                policyWeights2[i, j] -= currentLearningRate * clippedUpdate;
-            }
-        }
-
-        // Update policy network layer 3
-        for (int i = 0; i < policyWeights3.GetLength(0); i++)
-        {
-            for (int j = 0; j < policyWeights3.GetLength(1); j++)
-            {
-                double gradient = helper.ComputePPOGradient(policyWeights3[i, j], loss, entropyBonus);
-                velocityPW3[i, j] = 0.7 * velocityPW3[i, j] + 0.3 * gradient;
-                double clippedUpdate = helper.ClipGradient(velocityPW3[i, j]);
-                policyWeights3[i, j] -= currentLearningRate * clippedUpdate;
-            }
-        }
-
-        // Update policy output weights
-        for (int i = 0; i < policyWeightsOutput.GetLength(0); i++)
-        {
-            for (int j = 0; j < policyWeightsOutput.GetLength(1); j++)
-            {
-                double gradient = helper.ComputePPOGradient(policyWeightsOutput[i, j], loss, entropyBonus);
-                velocityPWOutput[i, j] = 0.7 * velocityPWOutput[i, j] + 0.3 * gradient;
-                double clippedUpdate = helper.ClipGradient(velocityPWOutput[i, j]);
-                policyWeightsOutput[i, j] -= currentLearningRate * clippedUpdate;
-            }
-        }
-    }
 
 
 
     /// <summary>
-    /// Updates the weights of the value network using gradient descent with momentum.
-    /// This function applies a learning rate decay and gradient clipping to stabilize training.
+    /// Interface for environment
     /// </summary>
-    /// <param name="loss">The loss value used to compute the gradient updates.</param>
-    private void UpdateValueNetworkWeights(double loss, double entropyBonus = 0)
+    public interface IEnvironment
     {
-        // Learning rate with decay
-        double currentLearningRate = LEARNING_RATE * (1.0 / (1.0 + 0.0001 * episodeRewards.Count));
+        Vector<float> Reset();
+        (Vector<float> nextState, float reward, bool done) Step(int action);
+    }
 
-        // Update policy network layer 1
-        for (int i = 0; i < valueWeights1.GetLength(0); i++)
+    /// <summary>
+    /// Example implementation of IEnvironment to be replaced with actual environment
+    /// </summary>
+    public class YourEnvironment : IEnvironment
+    {
+        private int stateSize;
+        private int actionSize;
+        private Random random = new Random();
+        private Vector<float> currentState;
+
+        public YourEnvironment(int stateSize, int actionSize)
         {
-            for (int j = 0; j < valueWeights1.GetLength(1); j++)
-            {
-                double gradient = helper.ComputePPOGradient(valueWeights1[i, j], loss, entropyBonus);
-                velocityVW1[i, j] = 0.9 * velocityVW1[i, j] + 0.1 * gradient; // Apply momentum
-                double clippedUpdate = helper.ClipGradient(velocityVW1[i, j]);
-                valueWeights1[i, j] -= currentLearningRate * clippedUpdate;
-            }
+            this.stateSize = stateSize;
+            this.actionSize = actionSize;
         }
 
-        // Update policy network layer 2
-        for (int i = 0; i < valueWeights2.GetLength(0); i++)
+        public Vector<float> Reset()
         {
-            for (int j = 0; j < valueWeights2.GetLength(1); j++)
-            {
-                double gradient = helper.ComputePPOGradient(valueWeights2[i, j], loss, entropyBonus);
-                velocityVW2[i, j] = 0.9 * velocityVW2[i, j] + 0.1 * gradient;
-                double clippedUpdate = helper.ClipGradient(velocityVW2[i, j]);
-                valueWeights2[i, j] -= currentLearningRate * clippedUpdate;
-            }
+            // Initialize state
+            currentState = Vector<float>.Build.Dense(stateSize, i => (float)random.NextDouble());
+            return currentState;
         }
 
-        // Update policy network layer 3
-        for (int i = 0; i < valueWeights3.GetLength(0); i++)
+        public (Vector<float> nextState, float reward, bool done) Step(int action)
         {
-            for (int j = 0; j < valueWeights3.GetLength(1); j++)
-            {
-                double gradient = helper.ComputePPOGradient(valueWeights3[i, j], loss, entropyBonus);
-                velocityVW3[i, j] = 0.9 * velocityVW3[i, j] + 0.1 * gradient;
-                double clippedUpdate = helper.ClipGradient(velocityVW3[i, j]);
-                valueWeights3[i, j] -= currentLearningRate * clippedUpdate;
-            }
-        }
+            // Implement your environment dynamics here
+            // This is a placeholder - replace with your actual environment logic
 
-        // Update policy output weights
-        for (int i = 0; i < valueWeightsOutput.GetLength(0); i++)
-        {
-            for (int j = 0; j < valueWeightsOutput.GetLength(1); j++)
+            // Update state based on action
+            Vector<float> nextState = Vector<float>.Build.Dense(stateSize);
+            for (int i = 0; i < stateSize; i++)
             {
-                double gradient = helper.ComputePPOGradient(valueWeightsOutput[i, j], loss, entropyBonus);
-                velocityVWOutput[i, j] = 0.9 * velocityVWOutput[i, j] + 0.1 * gradient;
-                double clippedUpdate = helper.ClipGradient(velocityVWOutput[i, j]);
-                valueWeightsOutput[i, j] -= currentLearningRate * clippedUpdate;
+                nextState[i] = currentState[i] + (float)(random.NextDouble() * 0.1 - 0.05);
+                // Keep within bounds
+                nextState[i] = Math.Max(0, Math.Min(1, nextState[i]));
             }
+
+            // Calculate reward (placeholder)
+            float reward = (float)(random.NextDouble() - 0.5);
+
+            // Determine if episode is done
+            bool done = random.NextDouble() < 0.01; // 1% chance of ending per step
+
+            currentState = nextState;
+            return (nextState, reward, done);
         }
     }
 
     /// <summary>
-    /// Updates both policy and value networks using collected trajectory data.
+    /// Main program class
     /// </summary>
-    /// <param name="states">List of state vectors</param>
-    /// <param name="actions">List of actions taken</param>
-    /// <param name="advantages">List of computed advantages</param>
-    /// <param name="oldActionProbs">List of action probabilities from old policy</param>
-    /// <param name="values">List of estimated state values</param>
-    /// <param name="rewards">List of rewards received</param>
-    private void UpdateNetworksBatch(TrajectoryData trajectory, List<int> batchIndices)
+    public class Program2
     {
-        double totalPolicyLoss = 0;
-        double totalValueLoss = 0;
-        double entropySum = 0;
-        double entropyBonus = ENTROPY_COEF; // Use the current entropy coefficient
-
-        foreach (int idx in batchIndices)
+        public static async Task Main(Game1 game)
         {
 
-            var currentProbs = PolicyForward(trajectory.states[idx]);
-            entropyBonus = helper.CalculateEntropyBonus(currentProbs); // Calculate entropy bonus for the current batch
-            // Calculate the ratio of new vs old policy
-            double oldProb = trajectory.oldActionProbs[idx];
-            double newProb = currentProbs[trajectory.actions[idx]];
-            double ratio = newProb / oldProb;  // This is the correct ratio calculation
-
-            // Policy loss with clipping
-            double advantage = trajectory.advantages[idx];
-            Console.WriteLine($"Advantage: {advantage}");
-
-            double unclippedSurrogate = ratio * advantage;
-            double clippedSurrogate = Math.Clamp(ratio, 1 - CLIP_EPSILON, 1 + CLIP_EPSILON) * advantage;
-            double policyLossForIdx = -Math.Min(unclippedSurrogate, clippedSurrogate);
-            totalPolicyLoss += policyLossForIdx;
-            if (advantage < 0)
+            if (game == null)
             {
-                policyLossForIdx = -Math.Max(unclippedSurrogate, clippedSurrogate);
+                throw new ArgumentNullException(nameof(game), "Game1 instance is null!");
             }
 
-            // Value loss
-            double returns = advantage + trajectory.values[idx];
-            double valueEstimate = ValueForward(trajectory.states[idx]);
+            // Configuration
+            int stateSize = 7;    // Adjust to match your environment
+            int actionSize = 5;
+            int maxEpisodes = 500;
+            int stepsPerEpisode = 2000; // As per your requirement
 
-            double valueLossForIdx = Math.Pow(valueEstimate - returns, 2);
-            totalValueLoss += valueLossForIdx; // Accumulate value loss properly
+            // Create environment (replace with your environment)
+            // Create and run PPO trainer
+            PPOTrainer trainer = new(
+                game,
+                stateSize,
+                actionSize,
+                maxEpisodes,
+                stepsPerEpisode
+            );
 
-            if (policyLossForIdx > 1e10 || valueLossForIdx > 1e10)
-            {
-                Console.WriteLine("Loss too large, check gradients!");
-            }
-
-            // Entropy calculation
-            double Entropy = -currentProbs.Sum(p => p * Math.Log(Math.Max(p, 1e-6)));
-            entropySum += Entropy;
+            Console.WriteLine("Starting PPO training...");
+            await trainer.Train();
+            Console.WriteLine("Training complete!");
         }
-
-        // Average the accumulated losses over batch size
-        int batchSize = batchIndices.Count;
-        double policyLoss = totalPolicyLoss / batchSize;
-        double valueLoss = totalValueLoss / batchSize;
-        double entropy = entropySum / batchSize;
-
-        // Adjust entropy coefficient dynamically
-        if (entropy > 1.5)
-            ENTROPY_COEF *= 0.99;  // Faster decay if entropy is too high
-        else
-            ENTROPY_COEF *= 0.999; // Slower decay if entropy is already low
-
-        ENTROPY_COEF = Math.Max(0.0001, ENTROPY_COEF); // Ensure minimum exploration
-
-        // Track metrics
-        policyLosses.Add(policyLoss);
-        valueLosses.Add(valueLoss);
-        entropyValues.Add(entropy);
-        double entropyTemp = entropySum / batchSize;
-        double fullpolicyLoss = policyLoss - ENTROPY_COEF * entropy;
-        // Compute total loss with entropy term
-        UpdateNetworkWeights(fullpolicyLoss, valueLoss, entropyBonus);
     }
 }

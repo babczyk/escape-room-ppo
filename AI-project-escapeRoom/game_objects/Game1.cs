@@ -6,17 +6,19 @@ using System;
 using System.Threading.Tasks;
 using System.Threading;
 using System.Collections.Generic;
+using PPOReinforcementLearning;
 
 namespace AI_project_escapeRoom
 {
     public class Game1 : Game
     {
+
         private GraphicsDeviceManager _graphics;
         private SpriteBatch _spriteBatch;
 
         // Training components
         private GameEnvironment gameEnvironment;
-        private PPO ppo;
+
         private Task trainingTask;
         private CancellationTokenSource cancellationSource;
         private bool isTraining = true;
@@ -64,6 +66,8 @@ namespace AI_project_escapeRoom
             _graphics.ApplyChanges();
 
             cameraPosition = Vector2.Zero;
+
+
         }
 
         protected override void Initialize()
@@ -76,14 +80,8 @@ namespace AI_project_escapeRoom
             InitializePlayer();
             InitializeEnvironment();
 
-            // Initialize training components
-            gameEnvironment = new GameEnvironment(this);
-            ppo = new PPO();
+            Task.Run(() => Program2.Main(this));
 
-            if (isTraining)
-            {
-                StartTraining();
-            }
         }
 
         // New Function: IsIdle
@@ -138,34 +136,6 @@ namespace AI_project_escapeRoom
 
             // Ensure the dot product is meaningful
             return dotProduct > 0.95f; // Slightly more strict
-        }
-
-
-        private void StartTraining()
-        {
-            cancellationSource = new CancellationTokenSource();
-            trainingTask = Task.Run(() => TrainingLoop(cancellationSource.Token));
-        }
-
-        private async Task TrainingLoop(CancellationToken token)
-        {
-            try
-            {
-                await Task.Run(() =>
-                {
-                    ppo.Train(gameEnvironment, 1000000, "ppo_prog.json", "ppo_model.json");
-                }, token);
-
-                // Switch to manual mode after training
-                Console.WriteLine("Training completed.");
-                isTraining = false;
-            }
-            catch (OperationCanceledException)
-            {
-                // Training was cancelled
-                Console.WriteLine("Training cenceled.");
-                isTraining = false;
-            }
         }
 
         // Your existing initialization methods remain the same
@@ -277,9 +247,8 @@ namespace AI_project_escapeRoom
             }
             if (state.IsKeyDown(Keys.Left))
             {
-                if (selectedReward == 0)
-                    gameEnvironment.pick_the_box += 0.5f;
-                else if (selectedReward == 1)
+
+                if (selectedReward == 1)
                     gameEnvironment.place_the_box_good += 0.5f;
                 else if (selectedReward == 2)
                     gameEnvironment.finish_reward += 0.5f;
@@ -298,9 +267,7 @@ namespace AI_project_escapeRoom
             }
             if (state.IsKeyDown(Keys.Right))
             {
-                if (selectedReward == 0)
-                    gameEnvironment.pick_the_box -= 0.5f;
-                else if (selectedReward == 1)
+                if (selectedReward == 1)
                     gameEnvironment.place_the_box_good -= 0.5f;
                 else if (selectedReward == 2)
                     gameEnvironment.finish_reward -= 0.5f;
@@ -402,35 +369,6 @@ namespace AI_project_escapeRoom
             door.Draw(_spriteBatch);
             cieling.Draw(_spriteBatch);
 
-
-            // Draw text at the upper corner of the screen
-            SpriteFont font = Content.Load<SpriteFont>("File");
-            _spriteBatch.DrawString(font, "Epesode:  " + ppo.curentEpisode, new Vector2(10, 30), Color.Red);
-            _spriteBatch.DrawString(font, "Rewards:  " + ppo.totalRewardInEpisode.ToString(), new Vector2(10, 50), Color.Red);
-            _spriteBatch.DrawString(font, "Policy loss:  " + ppo.policyLossesfordispaly.ToString("F3"), new Vector2(10, 70), Color.Red);
-            _spriteBatch.DrawString(font, "value loss:  " + ppo.Value_Loss.ToString("F3"), new Vector2(10, 90), Color.Red);
-            _spriteBatch.DrawString(font, "Entropy:  " + ppo.Entropy.ToString("F3"), new Vector2(10, 110), Color.Red);
-
-            string[] rewardTexts = new string[]
-            {
-                "Pick the box: " + gameEnvironment.pick_the_box,
-                "Place the box (good): " + gameEnvironment.place_the_box_good,
-                "Finish reward: " + gameEnvironment.finish_reward,
-                "Dropping box (bad): " + gameEnvironment.droping_box_bad,
-                "Collide with wall: " + gameEnvironment.culide_with_wall,
-                "Repeating actions: " + gameEnvironment.repeating_actions,
-                "Time penalty: " + gameEnvironment.time_panalty,
-                "Max steps penalty: " + gameEnvironment.max_steps_panalty
-            };
-
-            for (int i = 0; i < rewardTexts.Length; i++)
-            {
-                if (i == selectedReward)
-                {
-                    rewardTexts[i] = "<<< " + rewardTexts[i] + " >>>";
-                }
-                _spriteBatch.DrawString(font, rewardTexts[i], new Vector2(1000, 30 + i * 20), Color.Red);
-            }
             base.Draw(gameTime);
             _spriteBatch.End();
         }
