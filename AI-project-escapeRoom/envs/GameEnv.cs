@@ -123,7 +123,7 @@ class GameEnvironment
         // -0.5 for colliding with walls
         if (game.player.Intersects(game.walls[2]) || game.player.Intersects(game.walls[3]) || game.player.Intersects(game.walls[4]))
         {
-            reward -= 0.25f;
+            reward -= 0.2f;
             Console.WriteLine("[PENALTY] Collided with wall: -0.25");
         }
 

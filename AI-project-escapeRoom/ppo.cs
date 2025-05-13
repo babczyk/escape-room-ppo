@@ -59,7 +59,7 @@ namespace PPOReinforcementLearning
             var matrix = Matrix<float>.Build.Dense(rows, cols);
 
             // Xavier initialization
-            float scale = (float)Math.Sqrt(6.0 / (rows + cols));
+            float scale = (float)MathF.Sqrt((float)6.0 / (rows + cols));
             for (int i = 0; i < rows; i++)
             {
                 for (int j = 0; j < cols; j++)
@@ -95,7 +95,7 @@ namespace PPOReinforcementLearning
         private Vector<float> ApplyReLU(Vector<float> input)
         {
             return Vector<float>.Build.DenseOfEnumerable(
-                input.Select(x => Math.Max(0, x))
+                input.Select(x => MathF.Max(0, x))
             );
         }
 
@@ -158,7 +158,7 @@ namespace PPOReinforcementLearning
             List<Vector<float>> gradBiases)
         {
             t++;
-            float correctedLR = learningRate * (float)Math.Sqrt(1 - Math.Pow(beta2, t)) / (1 - (float)Math.Pow(beta1, t));
+            float correctedLR = learningRate * (float)MathF.Sqrt(1 - MathF.Pow(beta2, t)) / (1 - (float)MathF.Pow(beta1, t));
 
             for (int i = 0; i < weights.Count; i++)
             {
@@ -167,15 +167,19 @@ namespace PPOReinforcementLearning
                 vWeights[i] = vWeights[i].Multiply(beta2).Add(gradWeights[i].PointwiseMultiply(gradWeights[i]).Multiply(1 - beta2));
 
                 // Calculate update
-                Matrix<float> update = CalculateUpdate(mWeights[i], vWeights[i], correctedLR);
+                // Bias-corrected estimates
+                var mHatW = mWeights[i].Divide(1 - MathF.Pow(beta1, t));
+                var vHatW = vWeights[i].Divide(1 - MathF.Pow(beta2, t));
+                var update = mHatW.PointwiseDivide(vHatW.PointwiseSqrt().Add(epsilon)).Multiply(learningRate);
                 weights[i] = weights[i].Subtract(update);
 
                 // Update bias momentum and RMS
                 mBiases[i] = mBiases[i].Multiply(beta1).Add(gradBiases[i].Multiply(1 - beta1));
                 vBiases[i] = vBiases[i].Multiply(beta2).Add(gradBiases[i].PointwiseMultiply(gradBiases[i]).Multiply(1 - beta2));
 
-                // Calculate bias update
-                Vector<float> biasUpdate = CalculateUpdate(mBiases[i], vBiases[i], correctedLR);
+                var mHatB = mBiases[i].Divide(1 - MathF.Pow(beta1, t));
+                var vHatB = vBiases[i].Divide(1 - MathF.Pow(beta2, t));
+                var biasUpdate = mHatB.PointwiseDivide(vHatB.PointwiseSqrt().Add(epsilon)).Multiply(learningRate);
                 biases[i] = biases[i].Subtract(biasUpdate);
             }
         }
@@ -188,7 +192,7 @@ namespace PPOReinforcementLearning
             {
                 for (int j = 0; j < m.ColumnCount; j++)
                 {
-                    update[i, j] = correctedLR * m[i, j] / ((float)Math.Sqrt(v[i, j]) + epsilon);
+                    update[i, j] = correctedLR * m[i, j] / ((float)MathF.Sqrt(v[i, j]) + epsilon);
                 }
             }
 
@@ -201,7 +205,7 @@ namespace PPOReinforcementLearning
 
             for (int i = 0; i < m.Count; i++)
             {
-                update[i] = correctedLR * m[i] / ((float)Math.Sqrt(v[i]) + epsilon);
+                update[i] = correctedLR * m[i] / ((float)MathF.Sqrt(v[i]) + epsilon);
             }
 
             return update;
@@ -219,12 +223,12 @@ namespace PPOReinforcementLearning
         public AdamOptimizer criticOptimizer;
         private int stateSize;
         private int actionSize;
-        private float gamma = 0.99f;
+        private float gamma = 0.95f;
         private float gaeLambda = 0.95f;
         private float clipEpsilon = 0.15f;
         private float valueCoeff = 0.7f;
-        private float entropyCoeff = 0.5f;
-        private int batchSize = 64;
+        private float entropyCoeff = 0.1f;
+        private int batchSize = 256;
         private int epochs = 10;
         private Random random = new Random();
 
@@ -249,11 +253,8 @@ namespace PPOReinforcementLearning
 
         public int ChooseAction(Vector<float> state)
         {
-            Console.WriteLine($"State: {string.Join(", ", state)}");
             Vector<float> logits = actorNetwork.Forward(state);
-            Console.WriteLine($"Logits: {string.Join(", ", logits)}");
             Vector<float> probs = Softmax(logits);
-            Console.WriteLine($"Probabilities: {string.Join(", ", probs)}");
             // Sample action from probability distribution
             float sample = (float)random.NextDouble();
             float cumulativeProbability = 0;
@@ -274,7 +275,7 @@ namespace PPOReinforcementLearning
         {
             Vector<float> logits = actorNetwork.Forward(state);
             Vector<float> probs = Softmax(logits);
-            return (float)Math.Log(probs[action] + 1e-10);
+            return (float)MathF.Log(probs[action] + 1e-10f);
         }
 
         public float GetValue(Vector<float> state)
@@ -287,7 +288,7 @@ namespace PPOReinforcementLearning
         {
             float maxLogit = logits.Max();
             Vector<float> expValues = Vector<float>.Build.DenseOfEnumerable(
-                logits.Select(x => (float)Math.Exp(x - maxLogit))
+                logits.Select(x => (float)MathF.Exp(x - maxLogit))
             );
 
             float sumExpValues = expValues.Sum();
@@ -338,9 +339,12 @@ namespace PPOReinforcementLearning
 
             // Normalize advantages
             float meanAdvantage = advantages.Average();
-            float stdAdvantage = (float)Math.Sqrt(advantages.Select(a => Math.Pow(a - meanAdvantage, 2)).Average() + 1e-8f);
+            float stdAdvantage = (float)MathF.Sqrt(advantages.Select(a => MathF.Pow(a - meanAdvantage, 2)).Average() + 1e-8f);
             for (int i = 0; i < advantages.Count; i++)
+            {
                 advantages[i] = (advantages[i] - meanAdvantage) / (stdAdvantage + (float)1e-8);
+                advantages[i] = MathF.Max(-5f, MathF.Min(advantages[i], 5f)); // Post-normalization
+            }
         }
 
         private void UpdateNetworks(List<Experience> experiences, List<float> returns, List<float> advantages, List<int> batchIndices)
@@ -364,21 +368,21 @@ namespace PPOReinforcementLearning
                 Vector<float> logits = actorNetwork.Forward(exp.State);
                 Vector<float> probs = Softmax(logits);
 
-                float newLogProb = (float)Math.Log(probs[exp.Action] + 1e-10f);
-                float ratio = (float)Math.Exp(newLogProb - exp.LogProbability);
+                float newLogProb = (float)MathF.Log(probs[exp.Action] + 1e-10f);
+                float ratio = (float)MathF.Exp(newLogProb - exp.LogProbability);
                 float surrogate1 = ratio * advantage;
-                float surrogate2 = Math.Clamp(ratio, 1 - clipEpsilon, 1 + clipEpsilon) * advantage;
-                float policyLoss = -Math.Min(surrogate1, surrogate2);
+                float surrogate2 = MathF.Max(1 - clipEpsilon, MathF.Min(ratio, 1 + clipEpsilon)) * advantage;
+                float policyLoss = -MathF.Min(surrogate1, surrogate2);
 
                 // Entropy bonus
-                float entropy = -probs.Sum(p => p * (float)Math.Log(p + 1e-10f));
+                float entropy = -probs.Sum(p => p * (float)MathF.Log(p + 1e-10f));
 
                 // === Critic (value) loss ===
                 float value = criticNetwork.Forward(exp.State)[0];
-                float v_pred_clipped = exp.Value + Math.Clamp(value - exp.Value, -clipEpsilon, clipEpsilon);
+                float v_pred_clipped = exp.Value + MathF.Max(-clipEpsilon, MathF.Min(value - exp.Value, clipEpsilon));
                 float v_loss1 = MathF.Pow(value - target, 2);
                 float v_loss2 = MathF.Pow(v_pred_clipped - target, 2);
-                float valueLoss = valueCoeff * Math.Max(v_loss1, v_loss2);
+                float valueLoss = valueCoeff * MathF.Max(v_loss1, v_loss2);
 
                 // === Accumulate total losses (for logging only) ===
                 actorLoss += policyLoss - entropyCoeff * entropy;
@@ -410,7 +414,6 @@ namespace PPOReinforcementLearning
             criticOptimizer.Update(criticNetwork.GetWeights(), criticNetwork.GetBiases(), criticGradWeights, criticGradBiases);
 
             // === Logging (optional) ===
-            Console.WriteLine($"[PPO] Actor Loss: {actorLoss / batchIndices.Count}, Critic Loss: {criticLoss / batchIndices.Count}");
 
 
         }
@@ -482,7 +485,7 @@ namespace PPOReinforcementLearning
             Vector<float> actorGrad = gradLogPi * advantage;
 
             // Add entropy gradient to encourage exploration
-            Vector<float> entropyGrad = probs.Map(p => -MathF.Log(p + 1e-10f) - 1f) * entropyCoeff;
+            Vector<float> entropyGrad = probs.PointwiseMultiply(probs.Map(p => (float)Math.Log(p + 1e-10f) + 1f)) * entropyCoeff;
 
             // Combine policy + entropy gradients
             actorGrad += entropyGrad;
@@ -549,14 +552,7 @@ namespace PPOReinforcementLearning
                 var zCurrent = zs[layer];            // pre-activation of this layer
 
                 if (layer < weights.Count - 1)
-                {
-                    // Hidden layers: apply ReLU derivative
                     delta = delta.PointwiseMultiply(ApplyReLUDerivative(zCurrent));
-                }
-                else
-                {
-                    delta = delta.PointwiseMultiply(ApplyReLUDerivative(zCurrent));
-                }
 
                 // Accumulate gradients
                 gradWeights[layer] += delta.OuterProduct(aPrev);
@@ -572,7 +568,7 @@ namespace PPOReinforcementLearning
 
         private Vector<float> ApplyReLU(Vector<float> input)
         {
-            return input.Map(x => Math.Max(0f, x));
+            return input.Map(x => MathF.Max(0f, x));
         }
 
         private Vector<float> ApplyReLUDerivative(Vector<float> input)
@@ -710,6 +706,7 @@ namespace PPOReinforcementLearning
                 }
                 else
                 {
+                    SaveModel(agent, $"ppo_model_episode.json", episode + 1);
                     Console.WriteLine("JSON file not found.");
                 }
 
@@ -788,7 +785,7 @@ namespace PPOReinforcementLearning
             {
                 nextState[i] = currentState[i] + (float)(random.NextDouble() * 0.1 - 0.05);
                 // Keep within bounds
-                nextState[i] = Math.Max(0, Math.Min(1, nextState[i]));
+                nextState[i] = MathF.Max(0, MathF.Min(1, nextState[i]));
             }
 
             // Calculate reward (placeholder)
