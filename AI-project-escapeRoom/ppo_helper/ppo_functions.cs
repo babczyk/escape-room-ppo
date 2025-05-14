@@ -156,6 +156,23 @@ class PPOHelper
             : new double[0];
     }
 
+    public List<Matrix<float>> ConvertToMatrices(List<List<List<float>>> jagged)
+    {
+        return jagged.Select(layer =>
+            Matrix<float>.Build.DenseOfRows(layer.Select(row =>
+                Vector<float>.Build.DenseOfArray(row.ToArray()))
+            )
+        ).ToList();
+    }
+
+    public List<Vector<float>> ConvertToVectors(List<List<float>> jagged)
+    {
+        return jagged.Select(layer =>
+            Vector<float>.Build.DenseOfArray(layer.ToArray())
+        ).ToList();
+    }
+
+
     /// <summary>
     /// Samples an action from a probability distribution over actions.
     /// </summary>

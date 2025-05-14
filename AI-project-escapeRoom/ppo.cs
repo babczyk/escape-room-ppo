@@ -7,8 +7,10 @@ using System.Threading.Tasks;
 using AI_project_escapeRoom;
 using MathNet.Numerics.LinearAlgebra;
 
+
 namespace PPOReinforcementLearning
 {
+
     /// <summary>
     /// Represents a single experience step for the agent
     /// </summary>
@@ -296,6 +298,8 @@ namespace PPOReinforcementLearning
             // Train for multiple epochs
             for (int epoch = 0; epoch < epochs; epoch++)
             {
+                entropyCoeff = 0.01f * (float)MathF.Pow(0.1f, epoch / (float)epochs);
+
                 // Create mini-batches
                 List<int> indices = Enumerable.Range(0, experiences.Count).ToList();
                 Shuffle(indices);
@@ -462,23 +466,21 @@ namespace PPOReinforcementLearning
         {
             // === ACTOR GRADIENTS ===
 
-            // Forward pass to get logits
-            Vector<float> actorOutput = actorNetwork.Forward(exp.State);
+            // === ACTOR GRADIENTS ===
+            Vector<float> logits = actorNetwork.Forward(exp.State);
+            Vector<float> probs = Softmax(logits);
 
-            // Convert logits to probabilities (softmax)
-            Vector<float> probs = Softmax(actorOutput);
-
-            // Calculate gradient of log π(a|s)
-            Vector<float> gradLogPi = Vector<float>.Build.Dense(probs.Count, i => (i == exp.Action ? 1f : 0f) - probs[i]);
-
-            // Weight by advantage (PPO surrogate signal)
+            // Policy gradient: ∇θ log π(a|s) * advantage
+            Vector<float> gradLogPi = probs.Clone();
+            gradLogPi[exp.Action] -= 1; // Equivalent to (I - probs) for taken action
             Vector<float> actorGrad = gradLogPi * advantage;
 
-            // Add entropy gradient to encourage exploration
-            Vector<float> entropyGrad = probs.PointwiseMultiply(probs.Map(p => (float)Math.Log(p + 1e-10f) + 1f)) * entropyCoeff;
+            // Entropy gradient: ∇θ H(π) = -Σ (log(p) + 1) * ∇θ p
+            Vector<float> entropyGrad = probs.PointwiseMultiply(probs.Map(p =>
+                (float)Math.Log(p + 1e-10f) + 1f
+            )) * entropyCoeff;
 
-            // Combine policy + entropy gradients
-            actorGrad += entropyGrad;
+            actorGrad += entropyGrad; // MAXIMIZE ENTROPY
 
             // Backpropagate actor gradients
             BackpropagateGradients(actorNetwork, exp.State, actorGrad, actorGradWeights, actorGradBiases);
@@ -620,7 +622,14 @@ namespace PPOReinforcementLearning
             this.stepsPerEpisode = stepsPerEpisode;
             this.trainInterval = trainInterval;
             gameEnv = new GameEnvironment(game);
-            agent = new PPOAgent(stateSize, actionSize);
+
+            if (File.Exists("ppo_model_episode.json"))
+            {
+                // Load the model from JSON file
+                Console.WriteLine("Loading model from JSON file...");
+                agent = LoadModel("ppo_model_episode.json", stateSize, actionSize);
+            }
+            else agent = new PPOAgent(stateSize, actionSize);
         }
 
         public async Task Train()
@@ -702,7 +711,7 @@ namespace PPOReinforcementLearning
                 }
 
                 // Allow UI thread to process
-                await Task.Delay(1);
+                await Task.Delay(2);
             }
         }
         private void SaveModel(PPOAgent agent, string filePath, int episode = 1)
@@ -726,6 +735,33 @@ namespace PPOReinforcementLearning
             GetParent(Directory.GetCurrentDirectory()).FullName).FullName).FullName;
             string fullPath = Path.Combine(parentDirectory + "\\statistics_R_files", filePath);
             File.WriteAllText(fullPath, json);
+            File.WriteAllText(filePath, json);
+        }
+
+        public PPOAgent LoadModel(string filePath, int stateSize, int actionSize)
+        {
+            string parentDirectory = Directory.GetParent(Directory.GetParent(Directory
+                .GetParent(Directory.GetCurrentDirectory()).FullName).FullName).FullName;
+            string fullPath = Path.Combine(parentDirectory + "\\statistics_R_files", filePath);
+
+            string json = File.ReadAllText(fullPath);
+            var model = JsonSerializer.Deserialize<ModelData>(json);
+
+            // Rebuild actor network
+            var actorWeights = new PPOHelper().ConvertToMatrices(model.IN_ACTOR_WEIGHTS);
+            var actorBiases = new PPOHelper().ConvertToVectors(model.IN_ACTOR_BIASES);
+
+            // Rebuild critic network
+            var criticWeights = new PPOHelper().ConvertToMatrices(model.IN_CRITIC_WEIGHTS);
+            var criticBiases = new PPOHelper().ConvertToVectors(model.IN_CRITIC_BIASES);
+
+            PPOAgent agent = new PPOAgent(stateSize, actionSize);
+            agent.actorNetwork.SetWeights(actorWeights);
+            agent.actorNetwork.SetBiases(actorBiases);
+            agent.criticNetwork.SetWeights(criticWeights);
+            agent.criticNetwork.SetBiases(criticBiases);
+
+            return agent;
         }
     }
 
