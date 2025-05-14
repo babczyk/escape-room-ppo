@@ -1,45 +1,54 @@
-install.packages("jsonlite")
+# Load libraries
 library(jsonlite)
-
-prog <- fromJSON("C://Users/ronin/OneDrive/Desktop/stuff/escapeRoomAi/PG_MAIN/AI-project-escapeRoom/bin/Debug/net8.0/ppo_prog.json") # nolint
-save(prog, file = "C://Users/ronin/OneDrive/Desktop/stuff/escapeRoomAi/PG_MAIN/AI-project-escapeRoom/bin/Debug/net8.0/ppo_prog.RData") # nolint
-load("C:\\Users\\ronin\\OneDrive\\Desktop\\stuff\\escapeRoomAi\\PG_MAIN\\AI-project-escapeRoom\\bin\\Debug\\net8.0\\ppo_prog.RData") # nolint
-
-model <- fromJSON("C://Users/ronin/OneDrive/Desktop/stuff/escapeRoomAi/PG_MAIN/AI-project-escapeRoom/bin/Debug/net8.0/ppo_model.json") # nolint
-save(model, file = "C://Users/ronin/OneDrive/Desktop/stuff/escapeRoomAi/PG_MAIN/AI-project-escapeRoom/bin/Debug/net8.0/ppo_model.RData") # nolint
-load("C:\\Users\\ronin\\OneDrive\\Desktop\\stuff\\escapeRoomAi\\PG_MAIN\\AI-project-escapeRoom\\bin\\Debug\\net8.0\\ppo_model.RData") # nolint
-
 library(ggplot2)
 library(reshape2)
 library(gridExtra)
 
-# Convert JSON weights to a matrix
-policy_weights <- as.matrix(prog$POLICY_WEIGHTS_OUTPUT)
+# Load JSON data
+ppo_data <- fromJSON("PG_MAIN\\AI-project-escapeRoom\\statistics_R_files\\ppo_model_episode.json")
 
-# Convert matrix to a dataframe for plotting
-policy_df <- melt(policy_weights)
+# --- Plot 1: Total reward over episodes ---
+ppo_df <- data.frame(
+  episode = 1:ppo_data$IN_EPISODE,
+  total_reward = ppo_data$TOTAL_Reward
+)
 
-# 🔥 Plot 1: Heatmap
-heatmap_plot <- ggplot(policy_df, aes(Var1, Var2, fill = value)) +
-  geom_tile() +
-  scale_fill_gradient(low = "blue", high = "red") +
-  theme_minimal() +
+reward_plot <- ggplot(ppo_df, aes(x = episode, y = total_reward)) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_smooth(method = "loess", color = "red", se = FALSE, linetype = "dashed") +
   labs(
-    title = "Heatmap of Policy Network Weights",
-    x = "Input Nodes", y = "Output Nodes"
-  )
+    title = "PPO Learning Progress: Total Reward Over Episodes",
+    x = "Episode",
+    y = "Total Reward"
+  ) +
+  theme_minimal(base_size = 14)
 
-# 🔥 Plot 2: Training Progress
-reward_plot <- ggplot(
-  data.frame(
-    Episode = 1:seq_along(model$RecentRewards),
-    Reward = model$RecentRewards
-  ),
-  aes(x = Episode, y = Reward)
-) +
-  geom_line(color = "blue", size = 1) +
-  theme_minimal() +
-  labs(title = "Training Progress", x = "Episode", y = "Total Reward")
+# --- Helper: Plot a heatmap for a matrix ---
+plot_heatmap <- function(matrix_data, title) {
+  melted <- melt(matrix_data)
+  ggplot(melted, aes(x = Var2, y = Var1, fill = value)) +
+    geom_tile() +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+    labs(title = title, x = "Neuron/Unit", y = "Layer/Input") +
+    theme_minimal(base_size = 10)
+}
 
-# 📌 Arrange both plots together
-grid.arrange(heatmap_plot, reward_plot, ncol = 2)
+# --- Plot 2: Actor weights (first layer) ---
+actor_w1 <- ppo_data$IN_ACTOR_WEIGHTS[[1]]
+actor_w1_plot <- plot_heatmap(actor_w1, "Actor Weights Layer 1")
+
+# --- Plot 3: Actor biases (first layer) ---
+actor_b1 <- matrix(ppo_data$IN_ACTOR_BIASES[[1]], nrow = 1)
+actor_b1_plot <- plot_heatmap(actor_b1, "Actor Biases Layer 1")
+
+# --- Plot 4: Critic weights (first layer) ---
+critic_w1 <- ppo_data$IN_CRITIC_WEIGHTS[[1]]
+critic_w1_plot <- plot_heatmap(critic_w1, "Critic Weights Layer 1")
+
+# --- Plot 5: Critic biases (first layer) ---
+critic_b1 <- matrix(ppo_data$IN_CRITIC_BIASES[[1]], nrow = 1)
+critic_b1_plot <- plot_heatmap(critic_b1, "Critic Biases Layer 1")
+
+# --- Display all plots ---
+# You may need to adjust ncol/nrow depending on your screen
+grid.arrange(reward_plot, actor_w1_plot, actor_b1_plot, critic_w1_plot, critic_b1_plot, ncol = 2)

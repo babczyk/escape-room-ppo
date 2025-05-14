@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Threading;
+using MathNet.Numerics.LinearAlgebra;
 using Microsoft.Xna.Framework;
 
 
@@ -39,13 +39,20 @@ class PPOHelper
     /// <returns>Output vector after linear transformation</returns>
     public double[] LinearLayer(double[] input, double[,] weights, double[]? biasWeights = null)
     {
+        int inputSize = weights.GetLength(0);
         int outputSize = weights.GetLength(1);
+
+        if (input.Length != inputSize)
+            throw new ArgumentException("Input length does not match weight dimensions.");
+
         double[] output = new double[outputSize];
 
         for (int i = 0; i < outputSize; i++)
         {
-            for (int j = 0; j < input.Length; j++)
+            for (int j = 0; j < inputSize; j++)
+            {
                 output[i] += input[j] * weights[j, i];
+            }
 
             if (biasWeights != null)
                 output[i] += biasWeights[i];
@@ -64,16 +71,19 @@ class PPOHelper
     {
         return input.Select(x => x > 0 ? x : alpha * x).ToArray();
     }
-
+    public double[] ELU(double[] input, double alpha = 1.0)
+    {
+        return input.Select(x => (x > 0) ? x : alpha * (Math.Exp(x) - 1)).ToArray();
+    }
     /// <summary>
     /// Applies the softmax function to convert logits to probabilities.
     /// </summary>
     /// <param name="x">Input logits</param>
     /// <returns>Probability distribution that sums to 1</returns>
-    public double[] Softmax(double[] logits, double temperature = 1.5)
+    public double[] Softmax(double[] logits)
     {
         double maxLogit = logits.Max(); // Prevents numerical instability
-        double[] expValues = logits.Select(l => Math.Exp((l - maxLogit) / temperature)).ToArray();
+        double[] expValues = logits.Select(l => Math.Exp((l - maxLogit))).ToArray();
         double sumExp = expValues.Sum();
         return expValues.Select(e => e / sumExp).ToArray();
     }
@@ -146,6 +156,23 @@ class PPOHelper
             : new double[0];
     }
 
+    public List<Matrix<float>> ConvertToMatrices(List<List<List<float>>> jagged)
+    {
+        return jagged.Select(layer =>
+            Matrix<float>.Build.DenseOfRows(layer.Select(row =>
+                Vector<float>.Build.DenseOfArray(row.ToArray()))
+            )
+        ).ToList();
+    }
+
+    public List<Vector<float>> ConvertToVectors(List<List<float>> jagged)
+    {
+        return jagged.Select(layer =>
+            Vector<float>.Build.DenseOfArray(layer.ToArray())
+        ).ToList();
+    }
+
+
     /// <summary>
     /// Samples an action from a probability distribution over actions.
     /// </summary>
@@ -153,22 +180,33 @@ class PPOHelper
     /// <returns>Chosen action index</returns>
     public int SampleAction(double[] actionProbs, bool isTraining = true)
     {
-        double temperature = 1.5; // Adjust temperature scaling (higher = more randomness)
+        double temperature = isTraining ? 1.0 : 0.5;
 
-        double[] scaledProbs = actionProbs.Select(p => Math.Pow(p, 1 / temperature)).ToArray();
-        double sum = scaledProbs.Sum();
-        double[] normalizedProbs = scaledProbs.Select(p => p / sum).ToArray();
+        if (temperature != 1.0)
+        {
+            double[] scaledProbs = actionProbs.Select(p => Math.Pow(p, 1 / temperature)).ToArray();
+            double sum = scaledProbs.Sum();
+            actionProbs = scaledProbs.Select(p => p / sum).ToArray();
+        }
+
+        // Ensure normalization
+        double total = actionProbs.Sum();
+        if (Math.Abs(total - 1.0) > 1e-6)
+        {
+            actionProbs = actionProbs.Select(p => p / total).ToArray();
+        }
 
         double sample = random.NextDouble();
         double cumulative = 0;
 
-        for (int i = 0; i < normalizedProbs.Length; i++)
+        for (int i = 0; i < actionProbs.Length; i++)
         {
-            cumulative += normalizedProbs[i];
+            cumulative += actionProbs[i];
             if (sample <= cumulative)
                 return i;
         }
-        return normalizedProbs.Length - 1; // Fallback
+
+        return actionProbs.Select((p, i) => (p, i)).OrderByDescending(x => x.p).First().i;
     }
 
     public double CalculateLayerGradient(double weight)
@@ -190,5 +228,101 @@ class PPOHelper
         double weightDecay = 0.0001 * weight;
 
         return weight + noise + weightDecay;
+    }
+
+    public double CalculateEntropyBonus(double[] actionProbabilities)
+    {
+        double entropy = 0.0;
+
+        // Calculate entropy: -Σ P(a) * log(P(a))
+        foreach (double prob in actionProbabilities)
+        {
+            if (prob > 1e-10)  // Avoid log(0), use small epsilon
+            {
+                entropy -= prob * Math.Log(prob);
+            }
+        }
+
+        return entropy;
+    }
+
+    // Computes the PPO gradient with entropy regularization
+    public double ComputePPOGradient(double weight, double loss, double entropyBonus)
+    {
+        double entropyTerm = entropyBonus > 0 ? entropyBonus : 0; // Entropy regularization
+        return loss * (weight + entropyTerm);
+    }
+
+    // Applies gradient norm clipping to prevent exploding gradients
+    public double ClipGradient(double gradient)
+    {
+        double maxNorm = 1.0;  // Set the max allowed gradient norm
+        if (Math.Abs(gradient) > maxNorm)
+        {
+            return Math.Sign(gradient) * maxNorm;
+        }
+        return gradient;
+    }
+
+    public double[,] InitializeVelocity(double[,] weights)
+    {
+        Random rand = new Random();
+        double[,] velocity = new double[weights.GetLength(0), weights.GetLength(1)];
+
+        for (int i = 0; i < weights.GetLength(0); i++)
+        {
+            for (int j = 0; j < weights.GetLength(1); j++)
+            {
+                velocity[i, j] = (rand.NextDouble() * 0.2) - 0.1; // Range: [-0.1, 0.1]
+            }
+        }
+        return velocity;
+    }
+
+    public List<float[][]> ConvertToJaggedList(List<Matrix<float>> matrices)
+    {
+        var jaggedList = new List<float[][]>();
+
+        foreach (var matrix in matrices)
+        {
+            var rows = matrix.RowCount;
+            var cols = matrix.ColumnCount;
+            var jagged = new float[rows][];
+
+            for (int i = 0; i < rows; i++)
+            {
+                jagged[i] = new float[cols];
+                for (int j = 0; j < cols; j++)
+                {
+                    jagged[i][j] = matrix[i, j];
+                }
+            }
+
+            jaggedList.Add(jagged);
+        }
+
+        return jaggedList;
+    }
+    public List<float[]> ConvertVectorsToJaggedList(List<Vector<float>> vectors)
+    {
+        var result = new List<float[]>();
+
+        foreach (var vector in vectors)
+        {
+            result.Add(vector.ToArray());
+        }
+
+        return result;
+    }
+    public double[] InitializeVelocity(double[] biases)
+    {
+        Random rand = new Random();
+        double[] velocity = new double[biases.Length];
+
+        for (int i = 0; i < biases.Length; i++)
+        {
+            velocity[i] = (rand.NextDouble() * 0.2) - 0.1; // Range: [-0.1, 0.1]
+        }
+        return velocity;
     }
 }
