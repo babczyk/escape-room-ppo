@@ -10,7 +10,7 @@ using MathNet.Numerics.LinearAlgebra;
 
 namespace PPOReinforcementLearning
 {
-
+    #region Experience
     /// <summary>
     /// Represents a single experience step for the agent
     /// </summary>
@@ -24,7 +24,9 @@ namespace PPOReinforcementLearning
         public float LogProbability { get; set; }
         public float Value { get; set; }
     }
+    #endregion
 
+    #region NeuralNetwork 
     /// <summary>
     /// Neural network for the actor and critic models
     /// </summary>
@@ -101,7 +103,9 @@ namespace PPOReinforcementLearning
 
         public void SetBiases(List<Vector<float>> newBiases) => biases = newBiases;
     }
+    #endregion
 
+    #region AdamOptimizer
     /// <summary>
     /// Adam optimizer implementation
     /// </summary>
@@ -204,7 +208,9 @@ namespace PPOReinforcementLearning
             return update;
         }
     }
+    #endregion
 
+    #region PPOHelper
     /// <summary>
     /// PPO Agent implementation
     /// </summary>
@@ -480,7 +486,7 @@ namespace PPOReinforcementLearning
                 (float)Math.Log(p + 1e-10f) + 1f
             )) * entropyCoeff;
 
-            actorGrad += entropyGrad; // MAXIMIZE ENTROPY
+            actorGrad += entropyGrad;
 
             // Backpropagate actor gradients
             BackpropagateGradients(actorNetwork, exp.State, actorGrad, actorGradWeights, actorGradBiases);
@@ -601,7 +607,9 @@ namespace PPOReinforcementLearning
             }
         }
     }
+    #endregion
 
+    #region PPOTrainer
     /// <summary>
     /// Main class for running PPO reinforcement learning
     /// </summary>
@@ -696,7 +704,7 @@ namespace PPOReinforcementLearning
                     string jsonContent = File.ReadAllText(jsonFilePath);
                     var model = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonContent);
 
-                    if (totalReward.Last() > (model != null && model.TryGetValue("TOTAL_Reward", out var value) && value is JsonElement jsonElement && jsonElement.ValueKind == JsonValueKind.Array
+                    if (episodeReward > (model != null && model.TryGetValue("TOTAL_Reward", out var value) && value is JsonElement jsonElement && jsonElement.ValueKind == JsonValueKind.Array
                         ? jsonElement.EnumerateArray().Select(x => x.GetSingle()).Max()
                         : float.MinValue))
                     {
@@ -764,11 +772,9 @@ namespace PPOReinforcementLearning
             return agent;
         }
     }
+    #endregion
 
-
-
-
-
+    #region Game Environment
     /// <summary>
     /// Interface for environment
     /// </summary>
@@ -825,7 +831,9 @@ namespace PPOReinforcementLearning
             return (nextState, reward, done);
         }
     }
+    #endregion
 
+    #region Main Game
     /// <summary>
     /// Main program class
     /// </summary>
@@ -840,7 +848,7 @@ namespace PPOReinforcementLearning
             }
 
             // Configuration
-            int stateSize = 7;    // Adjust to match your environment
+            int stateSize = 10;    // Adjust to match your environment
             int actionSize = 5;
             int maxEpisodes = 500;
             int stepsPerEpisode = 2000; // As per your requirement
@@ -860,4 +868,5 @@ namespace PPOReinforcementLearning
             Console.WriteLine("Training complete!");
         }
     }
+    #endregion
 }

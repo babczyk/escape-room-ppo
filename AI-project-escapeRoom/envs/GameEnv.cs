@@ -42,9 +42,12 @@ class GameEnvironment
         (float)(game.player.Position.Y / game.groundLevel),
         (float)(game.box.Position.X / game.widthLevel),
         (float)(game.box.Position.Y / game.groundLevel),
+        (float)(game.button.Position.X / game.widthLevel),
+        (float)(game.button.Position.Y / game.groundLevel),
+        (float)(game.door.Position.X / game.widthLevel),
+        (float)(game.door.Position.Y / game.groundLevel),
         game.player.heldBox != null ? 1.0f : 0.0f,
         game.IsPressed ? 1.0f : 0.0f,
-        game.IsOpen ? 1.0f : 0.0f,
     };
 
         return Vector<float>.Build.DenseOfArray(stateValues.ToArray());
@@ -75,7 +78,7 @@ class GameEnvironment
         // +1 for placing box correctly
         if (game.box.Intersects(game.button) && game.player.heldBox == null)
         {
-            reward += 2f;
+            reward += 1f;
             Console.WriteLine("[REWARD] Placed box on button: +2");
         }
 
@@ -87,25 +90,25 @@ class GameEnvironment
             IsDone = true;
         }
 
-        // +0.1 for moving toward goal
+        // +0.3 for moving toward goal
         if ((game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null)
          || (game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null))
         {
-            reward += 0.3f;
+            reward += 0.2f;
             Console.WriteLine("[REWARD] Moving toward goal: +0.3");
         }
 
         // +0.5 for pressing the button
         if (game.IsPressed)
         {
-            reward += 0.5f;
+            reward += 0.3f;
             Console.WriteLine("[REWARD] Dropped box on button: +0.5");
         }
 
         // +0.5 for picking up box
         if (game.player.heldBox != null)
         {
-            reward += 0.2f;
+            reward += 0.1f;
             Console.WriteLine("[REWARD] Picked up box: +0.2");
         }
 
@@ -116,7 +119,7 @@ class GameEnvironment
         // -1 for dropping box not on button
         if (game.player.heldBox == null && !game.box.Intersects(game.button) && action == 4)
         {
-            reward -= 0.5f;
+            reward -= 0.2f;
             Console.WriteLine("[PENALTY] Dropped box off button: -0.5");
         }
 
