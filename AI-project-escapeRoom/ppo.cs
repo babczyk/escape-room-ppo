@@ -56,18 +56,10 @@ namespace PPOReinforcementLearning
 
         private Matrix<float> CreateMatrix(int rows, int cols)
         {
+            // HE INITIALIZATION FOR ReLU
+            float scale = (float)MathF.Sqrt(2.0f / cols); // INPUT SIZE (cols)
             var matrix = Matrix<float>.Build.Dense(rows, cols);
-
-            // Xavier initialization
-            float scale = (float)MathF.Sqrt((float)6.0 / (rows + cols));
-            for (int i = 0; i < rows; i++)
-            {
-                for (int j = 0; j < cols; j++)
-                {
-                    matrix[i, j] = (float)((random.NextDouble() * 2 - 1) * scale);
-                }
-            }
-
+            matrix.MapInplace(_ => (float)(random.NextDouble() * 2 - 1) * scale);
             return matrix;
         }
 
@@ -158,7 +150,6 @@ namespace PPOReinforcementLearning
             List<Vector<float>> gradBiases)
         {
             t++;
-            float correctedLR = learningRate * (float)MathF.Sqrt(1 - MathF.Pow(beta2, t)) / (1 - (float)MathF.Pow(beta1, t));
 
             for (int i = 0; i < weights.Count; i++)
             {
@@ -170,7 +161,7 @@ namespace PPOReinforcementLearning
                 // Bias-corrected estimates
                 var mHatW = mWeights[i].Divide(1 - MathF.Pow(beta1, t));
                 var vHatW = vWeights[i].Divide(1 - MathF.Pow(beta2, t));
-                var update = mHatW.PointwiseDivide(vHatW.PointwiseSqrt().Add(epsilon)).Multiply(learningRate);
+                var update = mHatW.PointwiseDivide(vHatW.PointwiseSqrt() + epsilon) * learningRate;
                 weights[i] = weights[i].Subtract(update);
 
                 // Update bias momentum and RMS
@@ -179,7 +170,7 @@ namespace PPOReinforcementLearning
 
                 var mHatB = mBiases[i].Divide(1 - MathF.Pow(beta1, t));
                 var vHatB = vBiases[i].Divide(1 - MathF.Pow(beta2, t));
-                var biasUpdate = mHatB.PointwiseDivide(vHatB.PointwiseSqrt().Add(epsilon)).Multiply(learningRate);
+                var biasUpdate = mHatB.PointwiseDivide(vHatB.PointwiseSqrt() + epsilon) * learningRate;
                 biases[i] = biases[i].Subtract(biasUpdate);
             }
         }
@@ -225,7 +216,7 @@ namespace PPOReinforcementLearning
         private int actionSize;
         private float gamma = 0.95f;
         private float gaeLambda = 0.95f;
-        private float clipEpsilon = 0.15f;
+        private float clipEpsilon = 0.2f;
         private float valueCoeff = 0.7f;
         private float entropyCoeff = 0.1f;
         private int batchSize = 256;
@@ -343,7 +334,6 @@ namespace PPOReinforcementLearning
             for (int i = 0; i < advantages.Count; i++)
             {
                 advantages[i] = (advantages[i] - meanAdvantage) / (stdAdvantage + (float)1e-8);
-                advantages[i] = MathF.Max(-5f, MathF.Min(advantages[i], 5f)); // Post-normalization
             }
         }
 
@@ -671,10 +661,10 @@ namespace PPOReinforcementLearning
                     state = nextState;
                     episodeReward += reward;
                     totalSteps++;
-
                     // Check if training is needed
                     if (totalSteps % trainInterval == 0 || done)
                     {
+                        Console.WriteLine("rewards: " + episodeReward);
                         // Train agent
                         agent.Train(experiences);
                         totalReward.Add(episodeReward);
@@ -686,6 +676,7 @@ namespace PPOReinforcementLearning
                         break;
                     }
                 }
+
 
                 Console.WriteLine($"Episode {episode + 1}/{maxEpisodes}, Reward: {episodeReward}");
 

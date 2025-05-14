@@ -91,8 +91,8 @@ class GameEnvironment
         if ((game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null)
          || (game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null))
         {
-            reward += 0.2f;
-            Console.WriteLine("[REWARD] Moving toward goal: +0.2");
+            reward += 0.3f;
+            Console.WriteLine("[REWARD] Moving toward goal: +0.3");
         }
 
         // +0.5 for pressing the button
@@ -103,10 +103,10 @@ class GameEnvironment
         }
 
         // +0.5 for picking up box
-        if (game.player.heldBox != null && action == 3)
+        if (game.player.heldBox != null)
         {
-            reward += 0.5f;
-            Console.WriteLine("[REWARD] Picked up box: +0.5");
+            reward += 0.2f;
+            Console.WriteLine("[REWARD] Picked up box: +0.2");
         }
 
         ///////////////////////////////
@@ -123,8 +123,8 @@ class GameEnvironment
         // -0.5 for colliding with walls
         if (game.player.Intersects(game.walls[2]) || game.player.Intersects(game.walls[3]) || game.player.Intersects(game.walls[4]))
         {
-            reward -= 0.2f;
-            Console.WriteLine("[PENALTY] Collided with wall: -0.25");
+            reward -= 0.1f;
+            Console.WriteLine("[PENALTY] Collided with wall: -0.1");
         }
 
         // -0.5 for repeating same action too much
