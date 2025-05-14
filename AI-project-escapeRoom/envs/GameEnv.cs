@@ -126,7 +126,7 @@ class GameEnvironment
         // -0.5 for colliding with walls
         if (game.player.Intersects(game.walls[2]) || game.player.Intersects(game.walls[3]) || game.player.Intersects(game.walls[4]))
         {
-            reward -= 0.1f;
+            reward -= 0.2f;
             Console.WriteLine("[PENALTY] Collided with wall: -0.1");
         }
 
@@ -148,19 +148,12 @@ class GameEnvironment
             Console.WriteLine("[PENALTY] Moving away from goal: -0.1");
         }
 
-        // -0.01 for not a valide action
-        if (action == 3 && !game.player.Intersects(game.box) || action == 4 && game.player.heldBox == null)
-        {
-            reward -= 0.05f;
-            Console.WriteLine("[PENALTY] Invalid action: -0.01");
-        }
-
         // -0.1 for cheating
         if (IsOutOfBounds(game.player) && game.IsPressed == false
         || IsOutOfBounds(game.box) && game.IsPressed == false)
         {
             ResetPlayerAndBox();
-            reward -= 0.1f;
+            reward -= 0.05f;
             Console.WriteLine("[PENALTY] Cheating: -0.1");
         }
 
