@@ -79,7 +79,7 @@ class GameEnvironment
         if (game.box.Intersects(game.button) && game.player.heldBox == null)
         {
             reward += 1f;
-            Console.WriteLine("[REWARD] Placed box on button: +2");
+            Console.WriteLine("[REWARD] Placed box on button: +1");
         }
 
         // +3 for successfully exiting the room
@@ -94,15 +94,15 @@ class GameEnvironment
         if ((game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null)
          || (game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null))
         {
-            reward += 0.2f;
-            Console.WriteLine("[REWARD] Moving toward goal: +0.3");
+            reward += 0.1f;
+            Console.WriteLine("[REWARD] Moving toward goal: +0.1");
         }
 
         // +0.5 for pressing the button
         if (game.IsPressed)
         {
             reward += 0.3f;
-            Console.WriteLine("[REWARD] Dropped box on button: +0.5");
+            Console.WriteLine("[REWARD] Dropped box on button: +0.3");
         }
 
         // +0.5 for picking up box
@@ -126,7 +126,7 @@ class GameEnvironment
         // -0.5 for colliding with walls
         if (game.player.Intersects(game.walls[2]) || game.player.Intersects(game.walls[3]) || game.player.Intersects(game.walls[4]))
         {
-            reward -= 0.1f;
+            reward -= 0.2f;
             Console.WriteLine("[PENALTY] Collided with wall: -0.1");
         }
 
@@ -146,6 +146,15 @@ class GameEnvironment
         {
             reward -= 0.1f;
             Console.WriteLine("[PENALTY] Moving away from goal: -0.1");
+        }
+
+        // -0.1 for cheating
+        if (IsOutOfBounds(game.player) && game.IsPressed == false
+        || IsOutOfBounds(game.box) && game.IsPressed == false)
+        {
+            ResetPlayerAndBox();
+            reward -= 0.05f;
+            Console.WriteLine("[PENALTY] Cheating: -0.1");
         }
 
 
