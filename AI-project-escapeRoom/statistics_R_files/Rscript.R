@@ -17,7 +17,7 @@ reward_plot <- ggplot(ppo_df, aes(x = episode, y = total_reward)) +
   geom_line(color = "blue", linewidth = 1) +
   geom_smooth(method = "loess", color = "red", se = FALSE, linetype = "dashed") +
   labs(
-    title = "PPO Learning Progress: Total Reward Over Episodes",
+    subtitle = "PPO Total Reward Over Episodes",
     x = "Episode",
     y = "Total Reward"
   ) +
@@ -49,6 +49,35 @@ critic_w1_plot <- plot_heatmap(critic_w1, "Critic Weights Layer 1")
 critic_b1 <- matrix(ppo_data$IN_CRITIC_BIASES[[1]], nrow = 1)
 critic_b1_plot <- plot_heatmap(critic_b1, "Critic Biases Layer 1")
 
+# --- Plot 6: Actor weights (second layer) ---
+actor_w2 <- ppo_data$IN_ACTOR_WEIGHTS[[2]]
+actor_w2_plot <- plot_heatmap(actor_w2, "Actor Weights Layer 2")
+
+# --- Plot 7: Actor biases (second layer) ---
+actor_b2 <- matrix(ppo_data$IN_ACTOR_BIASES[[2]], nrow = 1)
+actor_b2_plot <- plot_heatmap(actor_b2, "Actor Biases Layer 2")
+
+# --- Plot 8: Critic weights (second layer) ---
+critic_w2 <- ppo_data$IN_CRITIC_WEIGHTS[[2]]
+critic_w2_plot <- plot_heatmap(critic_w2, "Critic Weights Layer 2")
+
+# --- Plot 9: Critic biases (second layer) ---
+critic_b2 <- matrix(ppo_data$IN_CRITIC_BIASES[[2]], nrow = 1)
+critic_b2_plot <- plot_heatmap(critic_b2, "Critic Biases Layer 2")
+
+# --- Plot 10: Actor weights (third layer) ---
+actor_w3 <- ppo_data$IN_ACTOR_WEIGHTS[[3]]
+actor_w3_plot <- plot_heatmap(actor_w3, "Actor Weights Layer 3")
+
+# --- Plot 11: Actor biases (third layer) ---
+actor_b3 <- matrix(ppo_data$IN_ACTOR_BIASES[[3]], nrow = 1)
+actor_b3_plot <- plot_heatmap(actor_b3, "Actor Biases Layer 3")
+
 # --- Display all plots ---
 # You may need to adjust ncol/nrow depending on your screen
-grid.arrange(reward_plot, actor_w1_plot, actor_b1_plot, critic_w1_plot, critic_b1_plot, ncol = 2)
+grid.arrange(
+  reward_plot, actor_w1_plot, actor_b1_plot, critic_w1_plot, critic_b1_plot,
+  actor_w2_plot, actor_b2_plot, critic_w2_plot, critic_b2_plot,
+  actor_w3_plot, actor_b3_plot,
+  ncol = 3
+)

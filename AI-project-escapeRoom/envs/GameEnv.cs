@@ -14,7 +14,7 @@ using MathNet.Numerics.LinearAlgebra;
 class GameEnvironment
 {
     private Game1 game;
-    private int maxSteps = 2000;
+    private int maxSteps = 3000;
     private int currentStep;
     public List<int> PlayerMove;
 
@@ -58,6 +58,7 @@ class GameEnvironment
         currentStep++;
         float reward = 0;
         bool IsDone = false;
+        var state = GetState();
 
         // Apply action
         switch (action)
@@ -85,14 +86,14 @@ class GameEnvironment
         // +3 for successfully exiting the room
         if (game.IsPressed && IsOutOfBounds(game.player))
         {
-            reward += 3f;
+            reward += 2f;
             Console.WriteLine("[REWARD] Escaped the room: +3");
             IsDone = true;
         }
 
         // +0.3 for moving toward goal
-        if ((game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null)
-         || (game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null))
+        if ((game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null && (action == 0 || action == 1))
+         || (game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null && (action == 0 || action == 1)))
         {
             reward += 0.1f;
             Console.WriteLine("[REWARD] Moving toward goal: +0.1");
@@ -108,7 +109,7 @@ class GameEnvironment
         // +0.5 for picking up box
         if (game.player.heldBox != null)
         {
-            reward += 0.1f;
+            reward += 0.15f;
             Console.WriteLine("[REWARD] Picked up box: +0.2");
         }
 
@@ -141,8 +142,8 @@ class GameEnvironment
         }
 
         // -0.1 for moving away from goal
-        if ((!game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null)
-         || (!game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null))
+        if ((!game.IsMovingToward(game.box, game.lastPlayerPosition) && game.player.heldBox == null && (action == 0 || action == 1))
+         || (!game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null && (action == 0 || action == 1)))
         {
             reward -= 0.1f;
             Console.WriteLine("[PENALTY] Moving away from goal: -0.1");
@@ -172,7 +173,7 @@ class GameEnvironment
         Thread.Sleep(1);
         Console.WriteLine($"[TOTAL REWARD THIS STEP]: {reward}");
 
-        return (GetState(), reward, IsDone);
+        return (state, reward, IsDone);
     }
 
     // Helper methods

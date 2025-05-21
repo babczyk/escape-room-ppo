@@ -210,7 +210,7 @@ namespace PPOReinforcementLearning
     }
     #endregion
 
-    #region PPOHelper
+    #region PPOAgent
     /// <summary>
     /// PPO Agent implementation
     /// </summary>
@@ -229,6 +229,8 @@ namespace PPOReinforcementLearning
         private float entropyCoeff = 0.1f;
         private int batchSize = 256;
         private int epochs = 10;
+        private float actorLR = 3e-5f;  // Default PPO LR
+        private float criticLR = 3e-5f; // More stable value learningv
         private Random random = new Random();
 
         public PPOAgent(int stateSize, int actionSize)
@@ -237,14 +239,14 @@ namespace PPOReinforcementLearning
             this.actionSize = actionSize;
 
             // Initialize actor network (policy)
-            actorNetwork = new NeuralNetwork(new List<int> { stateSize, 64, 64, actionSize });
+            actorNetwork = new NeuralNetwork(new List<int> { stateSize, 128, 128, actionSize });
 
             // Initialize critic network (value function)
-            criticNetwork = new NeuralNetwork(new List<int> { stateSize, 64, 64, 1 });
+            criticNetwork = new NeuralNetwork(new List<int> { stateSize, 128, 128, 1 });
 
             // Initialize optimizers
-            actorOptimizer = new AdamOptimizer();
-            criticOptimizer = new AdamOptimizer();
+            actorOptimizer = new AdamOptimizer(learningRate: actorLR);
+            criticOptimizer = new AdamOptimizer(learningRate: criticLR);
 
             actorOptimizer.Initialize(actorNetwork.GetWeights(), actorNetwork.GetBiases());
             criticOptimizer.Initialize(criticNetwork.GetWeights(), criticNetwork.GetBiases());
@@ -300,28 +302,32 @@ namespace PPOReinforcementLearning
             List<float> returns = new List<float>();
             List<float> advantages = new List<float>();
             ComputeReturnsAndAdvantages(experiences, returns, advantages);
-
+            float savedEntropyCoeff = entropyCoeff;
             // Train for multiple epochs
             for (int epoch = 0; epoch < epochs; epoch++)
             {
-                entropyCoeff = 0.01f * (float)MathF.Pow(0.1f, epoch / (float)epochs);
-
                 // Create mini-batches
                 List<int> indices = Enumerable.Range(0, experiences.Count).ToList();
                 Shuffle(indices);
 
                 for (int i = 0; i < experiences.Count; i += batchSize)
                 {
-                    List<int> batchIndices = indices.Skip(i).Take(batchSize).ToList();
+                    int actualBatchSize = Math.Min(batchSize, experiences.Count - i);
+                    List<int> batchIndices = indices.Skip(i).Take(actualBatchSize).ToList();
                     UpdateNetworks(experiences, returns, advantages, batchIndices);
                 }
             }
+            entropyCoeff = savedEntropyCoeff;
         }
 
         private void ComputeReturnsAndAdvantages(List<Experience> experiences, List<float> returns, List<float> advantages)
         {
             float gae = 0f;
             float nextValue = 0f;
+            float meanReward = experiences.Average(e => e.Reward);
+            float stdReward = (float)MathF.Sqrt(experiences.Select(e => MathF.Pow(e.Reward - meanReward, 2)).Average() + 1e-8f);
+            foreach (var exp in experiences)
+                exp.Reward = (exp.Reward - meanReward) / (stdReward + 1e-8f);
 
             for (int i = experiences.Count - 1; i >= 0; i--)
             {
@@ -338,13 +344,7 @@ namespace PPOReinforcementLearning
                 nextValue = exp.Value;
             }
 
-            // Normalize advantages
-            float meanAdvantage = advantages.Average();
-            float stdAdvantage = (float)MathF.Sqrt(advantages.Select(a => MathF.Pow(a - meanAdvantage, 2)).Average() + 1e-8f);
-            for (int i = 0; i < advantages.Count; i++)
-            {
-                advantages[i] = (advantages[i] - meanAdvantage) / (stdAdvantage + (float)1e-8);
-            }
+
         }
 
         private void UpdateNetworks(List<Experience> experiences, List<float> returns, List<float> advantages, List<int> batchIndices)
@@ -385,7 +385,7 @@ namespace PPOReinforcementLearning
                 float valueLoss = valueCoeff * MathF.Max(v_loss1, v_loss2);
 
                 // === Accumulate total losses (for logging only) ===
-                actorLoss += policyLoss - entropyCoeff * entropy;
+                actorLoss += policyLoss + entropyCoeff * entropy;
                 criticLoss += valueLoss;
 
                 // === Calculate gradients and backprop ===
@@ -405,9 +405,10 @@ namespace PPOReinforcementLearning
             NormalizeGradients(criticGradWeights, criticGradBiases, batchIndices.Count);
 
             // === Optional: Clip gradients by global norm ===
-            float maxGradNorm = 0.5f;  // or tune this value
-            ClipGradients(actorGradWeights, actorGradBiases, maxGradNorm);
-            ClipGradients(criticGradWeights, criticGradBiases, maxGradNorm);
+            float actorMaxNorm = 0.5f;
+            float criticMaxNorm = 1.0f;
+            ClipGradients(actorGradWeights, actorGradBiases, actorMaxNorm);
+            ClipGradients(criticGradWeights, criticGradBiases, criticMaxNorm);
 
             // === Apply optimizer updates ===
             actorOptimizer.Update(actorNetwork.GetWeights(), actorNetwork.GetBiases(), actorGradWeights, actorGradBiases);
@@ -499,9 +500,9 @@ namespace PPOReinforcementLearning
 
             // Compute critic gradient: ∇ (V(s) - target)^2 = 2 * (V(s) - target)
             float valueError = valueEstimate - target;
-            Vector<float> criticGrad = Vector<float>.Build.Dense(1, 2f * valueError * valueCoeff);
-
-            // Backpropagate critic gradients
+            Vector<float> criticGrad = Vector<float>.Build.Dense(1, 2f * valueError);  // Remove valueCoeff
+                                                                                       // Then scale loss calculation instead:
+                                                                                       // Backpropagate critic gradients
             BackpropagateGradients(criticNetwork, exp.State, criticGrad, criticGradWeights, criticGradBiases);
         }
 
@@ -708,21 +709,22 @@ namespace PPOReinforcementLearning
                         ? jsonElement.EnumerateArray().Select(x => x.GetSingle()).Max()
                         : float.MinValue))
                     {
-                        SaveModel(agent, $"ppo_model_episode.json", episode + 1);
+                        SaveModel(agent, $"ppo_model_episode.json", episode + 1, true);
                         Console.WriteLine($"Model saved at episode {episode + 1}");
                     }
+                    else SaveModel(agent, $"ppo_model_episode.json", episode + 1, false);
                 }
                 else
                 {
-                    SaveModel(agent, $"ppo_model_episode.json", episode + 1);
+                    SaveModel(agent, $"ppo_model_episode.json", episode + 1, true);
                     Console.WriteLine("JSON file not found.");
                 }
 
                 // Allow UI thread to process
-                await Task.Delay(2);
+                await Task.Delay(1);
             }
         }
-        private void SaveModel(PPOAgent agent, string filePath, int episode = 1)
+        private void SaveModel(PPOAgent agent, string filePath, int episode = 1, bool saveForLoading = false)
         {
             PPOHelper helper = new PPOHelper();
             var model = new
@@ -742,8 +744,8 @@ namespace PPOReinforcementLearning
             string parentDirectory = Directory.GetParent(Directory.GetParent(Directory.
             GetParent(Directory.GetCurrentDirectory()).FullName).FullName).FullName;
             string fullPath = Path.Combine(parentDirectory + "\\statistics_R_files", filePath);
+            if (saveForLoading) File.WriteAllText(filePath, json);
             File.WriteAllText(fullPath, json);
-            File.WriteAllText(filePath, json);
         }
 
         public PPOAgent LoadModel(string filePath, int stateSize, int actionSize)
@@ -850,8 +852,8 @@ namespace PPOReinforcementLearning
             // Configuration
             int stateSize = 10;    // Adjust to match your environment
             int actionSize = 5;
-            int maxEpisodes = 500;
-            int stepsPerEpisode = 2000; // As per your requirement
+            int maxEpisodes = 1000;
+            int stepsPerEpisode = 3000; // As per your requirement
 
             // Create environment (replace with your environment)
             // Create and run PPO trainer
