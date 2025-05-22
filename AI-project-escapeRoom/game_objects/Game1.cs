@@ -216,7 +216,7 @@ namespace AI_project_escapeRoom
                 }
 
                 HandleCollisions();
-                HandleCameraMovement();
+                //HandleCameraMovement();
 
                 // Update game objects
                 player.Update(gameTime);

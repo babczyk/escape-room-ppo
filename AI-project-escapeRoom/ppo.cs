@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AI_project_escapeRoom;
+using MathNet.Numerics.Financial;
 using MathNet.Numerics.LinearAlgebra;
 
 
@@ -228,7 +229,7 @@ namespace PPOReinforcementLearning
         private float valueCoeff = 0.7f;
         private float entropyCoeff = 0.1f;
         private int batchSize = 256;
-        private int epochs = 10;
+        private int epochs = 6;
         private float actorLR = 3e-5f;  // Default PPO LR
         private float criticLR = 3e-5f; // More stable value learningv
         private Random random = new Random();
@@ -624,12 +625,11 @@ namespace PPOReinforcementLearning
         private GameEnvironment gameEnv;
         private List<float> totalReward = new List<float>();
 
-        public PPOTrainer(Game1 game, int stateSize, int actionSize, int maxEpisodes = 1000, int stepsPerEpisode = 2000, int trainInterval = 2000)
+        public PPOTrainer(Game1 game, int stateSize, int actionSize, int maxEpisodes = 1000, int stepsPerEpisode = 2000)
         {
             this.game = game;
             this.maxEpisodes = maxEpisodes;
             this.stepsPerEpisode = stepsPerEpisode;
-            this.trainInterval = trainInterval;
             gameEnv = new GameEnvironment(game);
 
             if (File.Exists("ppo_model_episode.json"))
@@ -641,17 +641,18 @@ namespace PPOReinforcementLearning
             else agent = new PPOAgent(stateSize, actionSize);
         }
 
-        public async Task Train()
+        public async Task Train(bool isTraining = true)
         {
             int totalSteps = 0;
             List<Experience> experiences = new List<Experience>();
 
             for (int episode = 0; episode < maxEpisodes; episode++)
             {
+                gameEnv.ResetPlayerAndBox();
                 Vector<float> state = gameEnv.GetState();
                 float episodeReward = 0;
-
-                for (int step = 0; step < stepsPerEpisode; step++)
+                bool forceDone = true;
+                for (int step = 0; step < stepsPerEpisode && forceDone; step++)
                 {
                     // Choose action
                     int action = agent.ChooseAction(state);
@@ -680,18 +681,19 @@ namespace PPOReinforcementLearning
                     episodeReward += reward;
                     totalSteps++;
                     // Check if training is needed
-                    if (totalSteps % trainInterval == 0 || done)
+                    if (totalSteps % stepsPerEpisode == 0 || done)
                     {
                         Console.WriteLine("rewards: " + episodeReward);
                         // Train agent
-                        agent.Train(experiences);
+                        if (isTraining)
+                            agent.Train(experiences);
                         totalReward.Add(episodeReward);
                         experiences.Clear();
                     }
 
                     if (done)
                     {
-                        break;
+                        forceDone = done;
                     }
                 }
 
@@ -704,15 +706,23 @@ namespace PPOReinforcementLearning
                 {
                     string jsonContent = File.ReadAllText(jsonFilePath);
                     var model = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonContent);
-
-                    if (episodeReward > (model != null && model.TryGetValue("TOTAL_Reward", out var value) && value is JsonElement jsonElement && jsonElement.ValueKind == JsonValueKind.Array
-                        ? jsonElement.EnumerateArray().Select(x => x.GetSingle()).Max()
-                        : float.MinValue))
+                    model.TryGetValue("TOTAL_Reward", out var value);
+                    if (value == null)
                     {
+                        throw new Exception("Error: TOTAL_Reward not found in JSON file.");
+                    }
+                    var rewardsList = JsonSerializer.Deserialize<List<float>>(value.ToString());
+                    if (episodeReward > rewardsList.LastOrDefault())
+                    {
+                        // Save the model if the new episode reward is greater than the previous one
+                        Console.WriteLine($"New best model found at episode {episode + 1}");
                         SaveModel(agent, $"ppo_model_episode.json", episode + 1, true);
+                    }
+                    else
+                    {
+                        SaveModel(agent, $"ppo_model_episode.json", episode + 1, false);
                         Console.WriteLine($"Model saved at episode {episode + 1}");
                     }
-                    else SaveModel(agent, $"ppo_model_episode.json", episode + 1, false);
                 }
                 else
                 {
@@ -750,11 +760,8 @@ namespace PPOReinforcementLearning
 
         public PPOAgent LoadModel(string filePath, int stateSize, int actionSize)
         {
-            string parentDirectory = Directory.GetParent(Directory.GetParent(Directory
-                .GetParent(Directory.GetCurrentDirectory()).FullName).FullName).FullName;
-            string fullPath = Path.Combine(parentDirectory + "\\statistics_R_files", filePath);
 
-            string json = File.ReadAllText(fullPath);
+            string json = File.ReadAllText(filePath);
             var model = JsonSerializer.Deserialize<ModelData>(json);
 
             // Rebuild actor network
