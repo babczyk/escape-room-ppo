@@ -240,10 +240,10 @@ namespace PPOReinforcementLearning
             this.actionSize = actionSize;
 
             // Initialize actor network (policy)
-            actorNetwork = new NeuralNetwork(new List<int> { stateSize, 128, 128, actionSize });
+            actorNetwork = new NeuralNetwork(new List<int> { stateSize, 64, 64, actionSize });
 
             // Initialize critic network (value function)
-            criticNetwork = new NeuralNetwork(new List<int> { stateSize, 128, 128, 1 });
+            criticNetwork = new NeuralNetwork(new List<int> { stateSize, 64, 64, 1 });
 
             // Initialize optimizers
             actorOptimizer = new AdamOptimizer(learningRate: actorLR);
@@ -621,7 +621,6 @@ namespace PPOReinforcementLearning
         private PPOAgent agent;
         private int maxEpisodes;
         private int stepsPerEpisode;
-        private int trainInterval;
         private GameEnvironment gameEnv;
         private List<float> totalReward = new List<float>();
 
