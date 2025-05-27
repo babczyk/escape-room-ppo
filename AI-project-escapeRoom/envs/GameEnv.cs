@@ -84,7 +84,7 @@ class GameEnvironment
         // for successfully exiting the room
         if (game.IsPressed && IsOutOfBounds(game.player))
         {
-            reward += 2f;
+            reward += 2000f;
             IsDone = true;
         }
 
@@ -121,14 +121,12 @@ class GameEnvironment
         if (game.player.heldBox == null && !game.box.Intersects(game.button) && action == 4)
         {
             reward -= 0.2f;
-            Console.WriteLine("[PENALTY] Dropped box off button: -0.5");
         }
 
         // for colliding with walls
         if (game.player.Intersects(game.walls[2]) || game.player.Intersects(game.walls[3]) || game.player.Intersects(game.walls[4]))
         {
             reward -= 0.2f;
-            Console.WriteLine("[PENALTY] Collided with wall: -0.1");
         }
 
         // time penalty every 100 steps
@@ -142,7 +140,6 @@ class GameEnvironment
          || (!game.IsMovingToward(game.button, game.lastPlayerPosition) && game.player.heldBox != null && (action == 0 || action == 1)))
         {
             reward -= 0.1f;
-            Console.WriteLine("[PENALTY] Moving away from goal: -0.1");
         }
 
         // for cheating
@@ -165,7 +162,6 @@ class GameEnvironment
         }
 
         Thread.Sleep(1);
-        Console.WriteLine($"[TOTAL REWARD THIS STEP]: {reward}");
 
         return (GetState(), reward, IsDone);
     }

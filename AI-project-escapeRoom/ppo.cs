@@ -630,7 +630,7 @@ namespace PPOReinforcementLearning
             this.game = game;
             this.maxEpisodes = maxEpisodes;
             this.stepsPerEpisode = stepsPerEpisode;
-            gameEnv = new GameEnvironment(game);
+            gameEnv = new GameEnvironment(game); //change to the class of your game environment as needed
 
             if (File.Exists("ppo_model_episode.json"))
             {
