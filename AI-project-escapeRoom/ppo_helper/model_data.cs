@@ -1,5 +1,6 @@
 
 
+using System;
 using System.Collections.Generic;
 
 public class ModelData
@@ -10,4 +11,6 @@ public class ModelData
     public List<List<float>> IN_ACTOR_BIASES { get; set; }
     public List<List<List<float>>> IN_CRITIC_WEIGHTS { get; set; }
     public List<List<float>> IN_CRITIC_BIASES { get; set; }
+    public List<double> AVERAGE_PARAMETER_SHIFTS { get; set; }
+
 }

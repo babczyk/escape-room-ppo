@@ -223,15 +223,15 @@ namespace PPOReinforcementLearning
         public AdamOptimizer criticOptimizer;
         private int stateSize;
         private int actionSize;
-        private float gamma = 0.95f;
+        private float gamma = 0.99f;
         private float gaeLambda = 0.95f;
         private float clipEpsilon = 0.2f;
-        private float valueCoeff = 0.7f;
-        private float entropyCoeff = 0.1f;
-        private int batchSize = 256;
-        private int epochs = 6;
-        private float actorLR = 3e-5f;  // Default PPO LR
-        private float criticLR = 3e-5f; // More stable value learningv
+        private float valueCoeff = 0.8f;
+        private float entropyCoeff = 0.01f;
+        private int batchSize = 128;
+        private int epochs = 3;
+        private float actorLR = 1e-5f;  // Default PPO LR
+        private float criticLR = 3e-5f; // More stable value learning
         private Random random = new Random();
 
         public PPOAgent(int stateSize, int actionSize)
@@ -240,10 +240,10 @@ namespace PPOReinforcementLearning
             this.actionSize = actionSize;
 
             // Initialize actor network (policy)
-            actorNetwork = new NeuralNetwork(new List<int> { stateSize, 64, 64, actionSize });
+            actorNetwork = new NeuralNetwork(new List<int> { stateSize, 256, 256, 256, actionSize });
 
             // Initialize critic network (value function)
-            criticNetwork = new NeuralNetwork(new List<int> { stateSize, 64, 64, 1 });
+            criticNetwork = new NeuralNetwork(new List<int> { stateSize, 256, 256, 256, 1 });
 
             // Initialize optimizers
             actorOptimizer = new AdamOptimizer(learningRate: actorLR);
@@ -633,9 +633,17 @@ namespace PPOReinforcementLearning
 
             if (File.Exists("ppo_model_episode.json"))
             {
-                // Load the model from JSON file
-                Console.WriteLine("Loading model from JSON file...");
-                agent = LoadModel("ppo_model_episode.json", stateSize, actionSize);
+                try
+                {
+                    // Load the model from JSON file
+                    Console.WriteLine("Loading model from JSON file...");
+                    agent = LoadModel("ppo_model_episode.json", stateSize, actionSize);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error loading model: {ex.Message}");
+                    agent = new PPOAgent(stateSize, actionSize);
+                }
             }
             else agent = new PPOAgent(stateSize, actionSize);
         }
@@ -644,116 +652,213 @@ namespace PPOReinforcementLearning
         {
             int totalSteps = 0;
             List<Experience> experiences = new List<Experience>();
+            const float successThreshold = 0.9f; // Adjust depending on environment
+            const int stableRewardWindow = 15;
+            const float entropyDecay = 0.99f;
+            int stableCounter = 0;
 
             for (int episode = 0; episode < maxEpisodes; episode++)
             {
                 gameEnv.ResetPlayerAndBox();
                 Vector<float> state = gameEnv.GetState();
                 float episodeReward = 0;
-                bool forceDone = true;
-                for (int step = 0; step < stepsPerEpisode && forceDone; step++)
-                {
-                    // Choose action
-                    int action = agent.ChooseAction(state);
+                bool done = false;
 
-                    // Get log probability and value
+                // === Start Episode ===
+                for (int step = 0; step < stepsPerEpisode && !done; step++)
+                {
+                    // === Choose action & step ===
+                    int action = agent.ChooseAction(state);
                     float logProb = agent.GetLogProbability(state, action);
                     float value = agent.GetValue(state);
 
-                    // Take action in environment
-                    Console.WriteLine($"Action: {action}");
-                    var (nextState, reward, done) = gameEnv.Step(action);
+                    var (nextState, reward, isDone) = gameEnv.Step(action);
+                    episodeReward += reward;
+                    totalSteps++;
 
-                    // Store experience
+                    // === Store experience ===
                     experiences.Add(new Experience
                     {
                         State = state,
                         Action = action,
                         Reward = reward,
                         NextState = nextState,
-                        Done = done,
+                        Done = isDone,
                         LogProbability = logProb,
                         Value = value
                     });
 
                     state = nextState;
-                    episodeReward += reward;
-                    totalSteps++;
-                    // Check if training is needed
-                    if (totalSteps % stepsPerEpisode == 0 || done)
-                    {
-                        Console.WriteLine("rewards: " + episodeReward);
-                        // Train agent
-                        if (isTraining)
-                            agent.Train(experiences);
-                        totalReward.Add(episodeReward);
-                        experiences.Clear();
-                    }
+                    done = isDone;
 
-                    if (done)
+                    // === Occasional logging only ===
+                    if (step % 500 == 0)
+                        Console.WriteLine($"Ep {episode + 1}, Step {step}, Reward: {episodeReward:F2}");
+
+                    // === Train when buffer is full or episode ends ===
+                    if ((totalSteps % stepsPerEpisode == 0 || done) && isTraining)
                     {
-                        forceDone = done;
+                        agent.Train(experiences);
+                        experiences.Clear();
                     }
                 }
 
+                // === Episode end ===
+                totalReward.Add(episodeReward);
+                Console.WriteLine($"Episode {episode + 1}/{maxEpisodes}, Reward: {episodeReward:F3}");
 
-                Console.WriteLine($"Episode {episode + 1}/{maxEpisodes}, Reward: {episodeReward}");
-
-                // Optionally save the model periodically
-                string jsonFilePath = "ppo_model_episode.json"; // Replace with your actual JSON file path
-                if (File.Exists(jsonFilePath))
+                // === Save model if new best ===
+                bool newBest = false;
+                if (totalReward.Count > 1 && episodeReward >= totalReward.Max())
                 {
-                    string jsonContent = File.ReadAllText(jsonFilePath);
-                    var model = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonContent);
-                    model.TryGetValue("TOTAL_Reward", out var value);
-                    if (value == null)
+                    newBest = true;
+                    Console.WriteLine($"🎯 New best model found! Reward: {episodeReward:F2}");
+                }
+
+                SaveModel(agent, "ppo_model_episode.json", episode + 1, newBest);
+
+                // === Entropy decay (less exploration over time) ===
+                agent.GetType().GetField("entropyCoeff", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?.SetValue(agent, (float)(float.Parse(agent.GetType().GetField("entropyCoeff", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    .GetValue(agent).ToString()) * entropyDecay));
+
+                // === Check success condition ===
+                if (episodeReward >= successThreshold)
+                {
+                    stableCounter++;
+                    if (stableCounter >= stableRewardWindow)
                     {
-                        throw new Exception("Error: TOTAL_Reward not found in JSON file.");
-                    }
-                    var rewardsList = JsonSerializer.Deserialize<List<float>>(value.ToString());
-                    if (episodeReward > rewardsList.LastOrDefault())
-                    {
-                        // Save the model if the new episode reward is greater than the previous one
-                        Console.WriteLine($"New best model found at episode {episode + 1}");
-                        SaveModel(agent, $"ppo_model_episode.json", episode + 1, true);
-                    }
-                    else
-                    {
-                        SaveModel(agent, $"ppo_model_episode.json", episode + 1, false);
-                        Console.WriteLine($"Model saved at episode {episode + 1}");
+                        Console.WriteLine("✅ Maze consistently solved — stopping training.");
+                        SaveModel(agent, "ppo_model_final.json", episode + 1, true);
+                        break;
                     }
                 }
                 else
                 {
-                    SaveModel(agent, $"ppo_model_episode.json", episode + 1, true);
-                    Console.WriteLine("JSON file not found.");
+                    stableCounter = 0;
                 }
 
-                // Allow UI thread to process
+                // === Small delay for UI responsiveness ===
                 await Task.Delay(1);
             }
+
+            Console.WriteLine("🏁 Training complete!");
         }
         private void SaveModel(PPOAgent agent, string filePath, int episode = 1, bool saveForLoading = false)
         {
             PPOHelper helper = new PPOHelper();
+
+            // === Current model snapshot ===
+            var currentWeightsActor = helper.ConvertToJaggedList(agent.actorNetwork.GetWeights());
+            var currentBiasesActor = helper.ConvertVectorsToJaggedList(agent.actorNetwork.GetBiases());
+            var currentWeightsCritic = helper.ConvertToJaggedList(agent.criticNetwork.GetWeights());
+            var currentBiasesCritic = helper.ConvertVectorsToJaggedList(agent.criticNetwork.GetBiases());
+
+            List<double> averageShifts = new List<double>(); // Store average shifts per save
+
+            // If a previous model exists, averageShift will be computed below and added to the array
+
+            // === Check if a previous model exists ===
+            if (File.Exists(filePath))
+            {
+                try
+                {
+                    string prevJson = File.ReadAllText(filePath);
+                    var prevModel = JsonSerializer.Deserialize<ModelData>(prevJson);
+                    averageShifts = prevModel.AVERAGE_PARAMETER_SHIFTS ?? new List<double>();
+                    if (prevModel != null)
+                    {
+                        var prevWeightsActor = new PPOHelper().ConvertToMatrices(prevModel.IN_ACTOR_WEIGHTS);
+                        var prevBiasesActor = new PPOHelper().ConvertToVectors(prevModel.IN_ACTOR_BIASES);
+                        var prevWeightsCritic = new PPOHelper().ConvertToMatrices(prevModel.IN_CRITIC_WEIGHTS);
+                        var prevBiasesCritic = new PPOHelper().ConvertToVectors(prevModel.IN_CRITIC_BIASES);
+
+                        // === Compute average absolute parameter shift ===
+                        float totalDiff = 0f;
+                        int totalParams = 0;
+
+                        // Actor weights
+                        for (int i = 0; i < prevWeightsActor.Count; i++)
+                        {
+                            var prevW = prevWeightsActor[i];
+                            var currW = agent.actorNetwork.GetWeights()[i];
+                            for (int r = 0; r < prevW.RowCount; r++)
+                                for (int c = 0; c < prevW.ColumnCount; c++)
+                                {
+                                    totalDiff += MathF.Abs(prevW[r, c] - currW[r, c]);
+                                    totalParams++;
+                                }
+                        }
+
+                        // Actor biases
+                        for (int i = 0; i < prevBiasesActor.Count; i++)
+                        {
+                            var prevB = prevBiasesActor[i];
+                            var currB = agent.actorNetwork.GetBiases()[i];
+                            for (int j = 0; j < prevB.Count; j++)
+                            {
+                                totalDiff += MathF.Abs(prevB[j] - currB[j]);
+                                totalParams++;
+                            }
+                        }
+
+                        // Critic weights
+                        for (int i = 0; i < prevWeightsCritic.Count; i++)
+                        {
+                            var prevW = prevWeightsCritic[i];
+                            var currW = agent.criticNetwork.GetWeights()[i];
+                            for (int r = 0; r < prevW.RowCount; r++)
+                                for (int c = 0; c < prevW.ColumnCount; c++)
+                                {
+                                    totalDiff += MathF.Abs(prevW[r, c] - currW[r, c]);
+                                    totalParams++;
+                                }
+                        }
+
+                        // Critic biases
+                        for (int i = 0; i < prevBiasesCritic.Count; i++)
+                        {
+                            var prevB = prevBiasesCritic[i];
+                            var currB = agent.criticNetwork.GetBiases()[i];
+                            for (int j = 0; j < prevB.Count; j++)
+                            {
+                                totalDiff += MathF.Abs(prevB[j] - currB[j]);
+                                totalParams++;
+                            }
+                        }
+
+                        if (totalParams > 0)
+                            averageShifts.Add(totalDiff / totalParams);
+
+                        Console.WriteLine($"[MODEL SHIFT] Average parameter change since last episode: {averageShifts.Last():F8}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: could not compare with previous model. {ex.Message}");
+                }
+            }
+
+            // === Create JSON model with shift info ===
             var model = new
             {
                 IN_EPISODE = episode,
                 TOTAL_Reward = totalReward,
-                IN_ACTOR_WEIGHTS = helper.ConvertToJaggedList(agent.actorNetwork.GetWeights()),  // For weights
-                IN_ACTOR_BIASES = helper.ConvertVectorsToJaggedList(agent.actorNetwork.GetBiases()), // For biases
-
-                IN_CRITIC_WEIGHTS = helper.ConvertToJaggedList(agent.criticNetwork.GetWeights()),
-                IN_CRITIC_BIASES = helper.ConvertVectorsToJaggedList(agent.criticNetwork.GetBiases())
-
-
+                IN_ACTOR_WEIGHTS = currentWeightsActor,
+                IN_ACTOR_BIASES = currentBiasesActor,
+                IN_CRITIC_WEIGHTS = currentWeightsCritic,
+                IN_CRITIC_BIASES = currentBiasesCritic,
+                AVERAGE_PARAMETER_SHIFTS = averageShifts
             };
 
+            // === Save JSON ===
             string json = JsonSerializer.Serialize(model, new JsonSerializerOptions { WriteIndented = true });
-            string parentDirectory = Directory.GetParent(Directory.GetParent(Directory.
-            GetParent(Directory.GetCurrentDirectory()).FullName).FullName).FullName;
+            string parentDirectory = Directory.GetParent(Directory.GetParent(Directory.GetParent(Directory.GetCurrentDirectory()).FullName).FullName).FullName;
             string fullPath = Path.Combine(parentDirectory + "\\statistics_R_files", filePath);
-            if (saveForLoading) File.WriteAllText(filePath, json);
+
+            if (saveForLoading)
+                File.WriteAllText(filePath, json);
+
             File.WriteAllText(fullPath, json);
         }
 
@@ -859,7 +964,7 @@ namespace PPOReinforcementLearning
             int stateSize = 10;    // Adjust to match your environment
             int actionSize = 5;
             int maxEpisodes = 1000;
-            int stepsPerEpisode = 3000; // As per your requirement
+            int stepsPerEpisode = 1000; // As per your requirement
 
             // Create environment (replace with your environment)
             // Create and run PPO trainer

@@ -5,7 +5,7 @@ library(reshape2)
 library(gridExtra)
 
 # Load JSON data
-ppo_data <- fromJSON("PG_MAIN\\AI-project-escapeRoom\\statistics_R_files\\ppo_model_episode.json")
+ppo_data <- fromJSON("AI-project-escapeRoom/statistics_R_files/ppo_model_episode.json")
 
 # --- Plot 1: Total reward over episodes ---
 ppo_df <- data.frame(
@@ -73,11 +73,27 @@ actor_w3_plot <- plot_heatmap(actor_w3, "Actor Weights Layer 3")
 actor_b3 <- matrix(ppo_data$IN_ACTOR_BIASES[[3]], nrow = 1)
 actor_b3_plot <- plot_heatmap(actor_b3, "Actor Biases Layer 3")
 
+# --- Plot 12: Model Shift (dot plot for single value) ---
+episodes <- 1:length(ppo_data$AVERAGE_PARAMETER_SHIFTS)
+model_shift_df <- data.frame(
+  episode = episodes,
+  shift = ppo_data$AVERAGE_PARAMETER_SHIFTS
+)
+
+model_shift_plot <- ggplot(model_shift_df, aes(x = episode, y = shift)) +
+  geom_point(color = "red", size = 3) +
+  geom_line(color = "red", linetype = "dashed") +
+  labs(
+    title = "Average Model Parameter Shift Over Episodes",
+    x = "Episode",
+    y = "Shift Value"
+  ) +
+  theme_minimal(base_size = 14)
 # --- Display all plots ---
 # You may need to adjust ncol/nrow depending on your screen
 grid.arrange(
   reward_plot, actor_w1_plot, actor_b1_plot, critic_w1_plot, critic_b1_plot,
   actor_w2_plot, actor_b2_plot, critic_w2_plot, critic_b2_plot,
-  actor_w3_plot, actor_b3_plot,
+  actor_w3_plot, actor_b3_plot, model_shift_plot,
   ncol = 3
 )
